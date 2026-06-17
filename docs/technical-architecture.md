@@ -24,6 +24,7 @@ Odgovornosti:
 - pristup lokalnim fajlovima,
 - pokretanje `ffmpeg` procesa,
 - credential storage,
+- user settings storage,
 - AI provider pozivi kada credential ne treba izlagati renderer-u,
 - IPC kanali prema renderer-u.
 
@@ -36,6 +37,7 @@ Odgovornosti:
 - subtitle editor,
 - styling UI,
 - i18n language switcher,
+- settings page,
 - export controls,
 - status i progress prikaz.
 
@@ -64,6 +66,8 @@ app/
       credential-store
     projects/
       project-store
+    settings/
+      settings-store
   renderer/
     i18n/
       index
@@ -76,10 +80,12 @@ app/
     subtitle-editor
     style-editor
     export-panel
+    settings-page
   shared/
     types
     subtitle
     export
+    settings
 ```
 
 Ovo je konceptualna struktura, ne obavezan finalni folder layout.
@@ -151,6 +157,83 @@ Izvori:
 - i18next dokumentacija: https://www.i18next.com/
 - react-i18next dokumentacija: https://react.i18next.com/
 - i18next TypeScript smernice: https://www.i18next.com/overview/typescript
+
+## Settings arhitektura
+
+Settings stranica je deo renderer-a, ali sve operacije koje dodiruju fajl sistem, credential-e ili provider konekciju idu preko main process-a.
+
+Podela odgovornosti:
+
+- Renderer prikazuje forme, validaciju i status.
+- Main process cuva podesavanja i credential-e.
+- AI provider registry cita aktivni provider i model settings iz settings store-a.
+- Credential store cuva tajne odvojeno od obicnih podesavanja.
+
+Settings store sme da cuva:
+
+- UI language,
+- default output folder,
+- export defaults,
+- selected AI provider,
+- selected model IDs,
+- subtitle polish preferences,
+- non-secret provider options.
+
+Settings store ne sme da cuva:
+
+- API key,
+- OAuth access token,
+- refresh token,
+- bilo koju drugu tajnu.
+
+Predlozeni tipovi:
+
+```ts
+type AppSettings = {
+  uiLanguage: 'en' | 'sr-Latn' | 'sr-Cyrl' | 'system';
+  defaultOutputFolder?: string;
+  workingFolder?: string;
+  autosaveEnabled: boolean;
+  recentFilesEnabled: boolean;
+  exportDefaults: ExportSettings;
+  aiConnector: AiConnectorSettings;
+};
+
+type ExportSettings = {
+  exportOriginalSrt: boolean;
+  exportTranslatedSrt: boolean;
+  defaultBurnedInTrack: 'original' | 'translation';
+  overwritePolicy: 'ask' | 'overwrite' | 'create_copy';
+  fileNamePattern: string;
+};
+
+type AiConnectorSettings = {
+  activeProviderId?: 'openai' | 'openrouter';
+  authModeByProvider: Partial<Record<'openai' | 'openrouter', AuthMode>>;
+  transcriptionModelByProvider: Partial<Record<'openai' | 'openrouter', string>>;
+  textModelByProvider: Partial<Record<'openai' | 'openrouter', string>>;
+  defaultTargetLanguage?: string;
+  autoDetectInputLanguage: boolean;
+  conservativePolish: boolean;
+  socialCaptionPolish: boolean;
+  maxCharsPerLine: number;
+  maxLinesPerCaption: 1 | 2;
+};
+```
+
+Settings IPC treba da bude eksplicitan:
+
+- `settings:get`
+- `settings:update`
+- `settings:reset`
+- `ai:listProviders`
+- `ai:getProviderStatus`
+- `ai:connectProvider`
+- `ai:disconnectProvider`
+- `ai:testConnection`
+- `ai:listModels`
+
+`settings:update` ne sme primati credential vrednosti. Tajne idu samo kroz provider connect flow i credential store.
 
 ## Lokalni workflow
 

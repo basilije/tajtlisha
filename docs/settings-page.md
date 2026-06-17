@@ -1,0 +1,176 @@
+# Settings Page
+
+## Cilj
+
+Settings stranica je centralno mesto za podesavanja aplikacije. Mora biti deo MVP-a, jer aplikacija ima vise nezavisnih konfiguracionih oblasti: UI jezik, export, radne foldere i AI konektor.
+
+Settings nije modal za jednu opciju, vec posebna stranica ili panel dostupan iz glavne navigacije i aplikacionog menija.
+
+## Sekcije
+
+Settings stranica ima ove sekcije:
+
+- General
+- Language & localization
+- AI connector
+- Export defaults
+- Advanced / diagnostics
+
+## General
+
+Opcije:
+
+- default output folder,
+- working/temp folder,
+- autosave on/off,
+- recent files on/off,
+- never modify original video on/off.
+
+Pravila:
+
+- default je da se originalni video nikad ne menja,
+- ako output folder nije izabran, app pita korisnika pri exportu,
+- temporary fajlovi se mogu obrisati iz Advanced sekcije.
+
+## Language & localization
+
+Opcije:
+
+- UI language:
+  - English (`en`),
+  - srpski latinica (`sr-Latn`),
+  - srpski cirilica (`sr-Cyrl`),
+  - system default.
+- prikaz detektovanog OS locale-a,
+- reset na system default.
+
+Pravila:
+
+- izbor UI jezika se pamti,
+- `en` je fallback,
+- promena UI jezika ne menja input jezik videa,
+- promena UI jezika ne menja target jezik prevoda.
+
+## AI connector
+
+AI connector je posebna sekcija Settings stranice i centralno mesto za sve AI opcije.
+
+### Provider izbor
+
+MVP provider-i:
+
+- OpenAI,
+- OpenRouter.
+
+UI mora da prikaze:
+
+- aktivni provider,
+- status konekcije,
+- auth metod,
+- podrzane capability-je,
+- dugmad: connect, disconnect, test connection.
+
+### Auth opcije
+
+OpenAI:
+
+- prioritet: OAuth/login spike ako postoji stabilan podrzan flow,
+- fallback: API key.
+
+OpenRouter:
+
+- API key / Bearer token.
+
+Codex auth:
+
+- samo experimental/dev ako se nadje podrzan nacin,
+- ne citati direktno `~/.codex/auth.json` kao production mehanizam.
+
+### Model opcije
+
+AI connector treba da omoguci:
+
+- model za transkripciju,
+- model za prevod,
+- model za subtitle polish,
+- kasnije TTS/voiceover model.
+
+Ako provider podrzava model listing, app ga ucitava. Ako ne podrzava, app moze imati rucno unet model ID uz validaciju kroz test connection.
+
+### Subtitle AI opcije
+
+Opcije:
+
+- auto-detect input language,
+- default target language,
+- conservative polish,
+- social caption polish,
+- max chars per line,
+- max lines per caption,
+- keep original meaning,
+- preserve timing during translation.
+
+### Credential prikaz
+
+AI connector ne sme da prikazuje tajne posle cuvanja.
+
+Dozvoljeno:
+
+- prikaz `Connected`,
+- masked key, npr. `sk-...abcd`,
+- datum poslednje provere,
+- replace credential,
+- delete credential.
+
+Nije dozvoljeno:
+
+- plain text API key,
+- plain text access token,
+- logovanje tajni u debug izlaz.
+
+### Test connection
+
+Test connection treba da proveri:
+
+- da credential postoji,
+- da provider prihvata auth,
+- da izabrani modeli postoje ili su dostupni,
+- da capability koji app trazi nije ocigledno nepodrzan.
+
+Test ne treba automatski da radi skupu transkripciju osim ako korisnik eksplicitno pokrene dublji provider test.
+
+## Export defaults
+
+Opcije:
+
+- default export folder,
+- export original SRT by default,
+- export translated SRT by default,
+- default burned-in track: original ili translation,
+- MP4 file naming pattern,
+- overwrite policy:
+  - ask,
+  - overwrite,
+  - create copy.
+
+## Advanced / diagnostics
+
+Opcije:
+
+- ffmpeg path/status,
+- provider debug status bez tajni,
+- open logs folder,
+- clear temporary files,
+- reset all settings,
+- reset AI connector only.
+
+## Acceptance criteria
+
+- Settings stranica postoji u MVP-u.
+- AI connector je posebna sekcija, ne usputno dugme u editoru.
+- Korisnik moze da promeni UI jezik iz Settings-a.
+- Korisnik moze da izabere AI provider i auth metod.
+- Korisnik moze da testira konekciju.
+- Tajne se cuvaju u credential store-u, ne u settings fajlu.
+- Obicna podesavanja se cuvaju u settings store-u.
+- Settings UI je potpuno lokalizovan kroz i18n sistem.

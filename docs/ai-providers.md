@@ -6,6 +6,8 @@ AI sloj mora biti modularan. Aplikacija ne sme da zavisi od jednog providera u U
 
 Prvi prioritet je OpenAI auth/login istrazivanje. OpenRouter se tretira kao dodatni API provider.
 
+Sva korisnicka podesavanja za AI nalaze se u posebnoj AI connector sekciji Settings stranice.
+
 ## Trenutno stanje iz dokumentacije
 
 OpenAI API referenca navodi Bearer autentikaciju preko API keys ili kratkotrajnih access token-a iz workload identity federation:
@@ -96,6 +98,36 @@ type AiProviderCapabilities = {
 };
 ```
 
+## AI connector settings
+
+AI connector je UI i konfiguracioni sloj iznad provider interfejsa.
+
+Mora podrzati:
+
+- izbor aktivnog providera,
+- prikaz podrzanih capability-ja,
+- izbor auth metoda po provideru,
+- connect/disconnect,
+- test connection,
+- masked credential status,
+- brisanje credential-a,
+- izbor modela za transkripciju,
+- izbor modela za prevod i subtitle polish,
+- default target language,
+- auto-detect input language on/off,
+- conservative polish on/off,
+- social caption polish on/off,
+- max chars per line,
+- max lines per caption.
+
+AI connector mora jasno odvojiti:
+
+- tajne, koje idu u credential store,
+- obicna podesavanja, koja idu u settings store,
+- provider runtime status, koji se dobija iz provider registry-ja.
+
+Provider konekcija ne sme zavisiti od UI jezika aplikacije.
+
 ## Core AI tipovi
 
 ```ts
@@ -159,6 +191,8 @@ type AiProvider = {
   displayName: string;
   authModes: AuthMode[];
   capabilities: AiProviderCapabilities;
+  listModels?(capability: keyof AiProviderCapabilities): Promise<string[]>;
+  testConnection(): Promise<{ ok: boolean; message?: string }>;
   connect(authMode: AuthMode): Promise<void>;
   disconnect(): Promise<void>;
   detectLanguage?(request: TranscriptionRequest): Promise<LanguageCode>;
@@ -189,4 +223,3 @@ OpenAI OAuth/login moze postati default samo ako:
 - nema ocigledan policy/security rizik.
 
 Ako ovo ne prodje, MVP koristi OpenAI API key i OpenRouter API key kao podrzane provider tokove.
-

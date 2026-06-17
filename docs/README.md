@@ -30,6 +30,7 @@ Preporuceni i18n sistem je `i18next`, uz `react-i18next` ako renderer bude React
 - [Product Spec](./product-spec.md) - proizvodni scope, korisnici, MVP i faze.
 - [Technical Architecture](./technical-architecture.md) - Electron, moduli, ffmpeg i lokalni workflow.
 - [AI Providers](./ai-providers.md) - OpenAI/OpenRouter, auth pristup i provider interfejs.
+- [Settings Page](./settings-page.md) - podesavanja aplikacije i AI konektor.
 - [Subtitle Export Spec](./subtitle-export-spec.md) - subtitle model, styling i export pravila.
 - [Roadmap](./roadmap.md) - faze razvoja i kriterijumi za prelazak iz faze u fazu.
 
@@ -40,4 +41,5 @@ Preporuceni i18n sistem je `i18next`, uz `react-i18next` ako renderer bude React
 - Video editing u MVP-u znaci samo trim pocetka i kraja, ne full video editor.
 - AI funkcije u MVP-u su transkripcija, detekcija jezika, prevod i subtitle polish.
 - UI internacionalizacija je deo osnovne arhitekture, ne kasniji dodatak.
+- Settings stranica je deo MVP-a, sa posebnim AI konektor panelom.
 - Voiceover/dubbing je druga faza, ne deo MVP-a.

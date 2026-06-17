@@ -33,7 +33,8 @@ Sekundarni korisnici u kasnijim fazama:
 10. Korisnik rucno koriguje tekst i timing.
 11. Korisnik bira subtitle stil.
 12. App prikazuje preview titlova preko videa.
-13. Korisnik izvozi SRT i MP4.
+13. Korisnik po potrebi menja podesavanja u Settings stranici.
+14. Korisnik izvozi SRT i MP4.
 
 ## MVP funkcije
 
@@ -43,6 +44,8 @@ Sekundarni korisnici u kasnijim fazama:
   - engleski,
   - srpski latinica,
   - srpski cirilica.
+- Settings stranica za podesavanja aplikacije.
+- Poseban AI konektor deo unutar Settings stranice.
 - Auto-detekcija jezika iz audio snimka.
 - AI transkripcija.
 - Biranje jednog ciljnog jezika prevoda.
@@ -82,6 +85,81 @@ Zahtevi:
 - duzi srpski tekstovi ne smeju lomiti layout.
 
 Napomena: UI lokalizacija nije isto sto i prevod titlova. UI jezici odredjuju jezik aplikacije, a target language odredjuje jezik prevedenih subtitle fajlova.
+
+## Settings stranica
+
+MVP mora imati posebnu Settings stranicu, dostupnu iz glavne navigacije ili aplikacionog menija.
+
+Settings stranica treba da bude podeljena na jasne sekcije:
+
+- General,
+- Language & localization,
+- AI connector,
+- Export defaults,
+- Advanced / diagnostics.
+
+### General
+
+General sekcija sadrzi:
+
+- default output folder,
+- recent files on/off,
+- autosave on/off,
+- privremeni radni folder,
+- opcija da se originalni video nikad ne menja direktno.
+
+### Language & localization
+
+Language sekcija sadrzi:
+
+- UI language selector: `en`, `sr-Latn`, `sr-Cyrl`,
+- prikaz trenutnog OS locale-a,
+- fallback language prikaz,
+- reset na system default.
+
+### AI connector
+
+AI konektor je poseban deo Settings stranice i centralno mesto za sve AI opcije.
+
+MVP opcije:
+
+- izbor providera: OpenAI, OpenRouter,
+- auth metod po provideru,
+- connect/disconnect,
+- status konekcije,
+- test connection,
+- izbor modela za transkripciju,
+- izbor modela za prevod i subtitle polish,
+- default target language,
+- auto-detect input language on/off,
+- conservative polish on/off,
+- social caption polish on/off,
+- max chars per line,
+- max lines per caption,
+- cost/safety upozorenje ako provider naplacuje pozive.
+
+AI connector ne sme da prikazuje sirove API key-eve ili access token-e posle cuvanja. Dozvoljeno je prikazati masked vrednost i dugme za replace/delete.
+
+### Export defaults
+
+Export sekcija sadrzi:
+
+- default export folder,
+- default MP4 naming pattern,
+- da li exportovati original SRT,
+- da li exportovati translated SRT,
+- default burned-in track: original ili translation,
+- overwrite policy: ask, overwrite, create copy.
+
+### Advanced / diagnostics
+
+Advanced sekcija sadrzi:
+
+- ffmpeg path/status,
+- AI provider debug info bez tajni,
+- open logs folder,
+- clear temporary files,
+- reset settings.
 
 ## Subtitle styling
 

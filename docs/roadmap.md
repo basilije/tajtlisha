@@ -13,6 +13,7 @@ Zadaci:
 - Izabrati Electron setup.
 - Potvrditi i18n stack: `i18next` plus `react-i18next` ako renderer bude React.
 - Izabrati credential storage biblioteku za Linux.
+- Definisati settings store i AI connector sekciju.
 
 Exit criteria:
 
@@ -20,6 +21,7 @@ Exit criteria:
 - poznat fallback auth flow,
 - potvrdjen `ffmpeg` workflow,
 - potvrdjena UI lokalizacija za `en`, `sr-Latn` i `sr-Cyrl`,
+- poznat settings data model,
 - poznat minimalni data model.
 
 ## Phase 1 - MVP
@@ -31,6 +33,8 @@ Funkcije:
 - import MP4,
 - video preview,
 - UI language switcher za engleski, srpski latinicu i srpski cirilicu,
+- Settings stranica,
+- AI connector sekcija unutar Settings stranice,
 - trim pocetka i kraja,
 - audio extraction,
 - AI provider connect,
@@ -48,6 +52,8 @@ Exit criteria:
 
 - workflow radi end-to-end na Linux-u,
 - UI moze da se prebaci izmedju `en`, `sr-Latn` i `sr-Cyrl`,
+- AI provider se podesava iz Settings stranice,
+- test connection radi bez izlaganja tajni,
 - greske su citljive,
 - originalni video se ne menja,
 - export fajlovi se mogu otvoriti u standardnim playerima.
@@ -61,6 +67,7 @@ Funkcije:
 - subtitle preset-i,
 - autosave projekta,
 - recent files,
+- dodatna validacija Settings formi,
 - bolji progress UI,
 - provera nedostajucih translation key-eva,
 - validacija pre exporta,
