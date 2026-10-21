@@ -18,6 +18,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 - Transcription with word timestamps (`whisper-1`), caption building with line/duration limits and balanced
   lines, and a speech-detection fallback (ffmpeg silencedetect) for models that return text only.
 - Translation and polish validate every caption and retry missing ones once; they never fall back to the source text.
+- Linux packages (AppImage, deb) built with electron-builder; auto-update for the AppImage through GitHub
+  Releases (check on startup and from Settings; download and install only on user action).
+- GitHub Actions: CI (typecheck, tests, build) and a release workflow for version tags.
 - UI language "System" follows the OS language (Serbian, Croatian, Bosnian -> Serbian Latin).
 
 ### Fixed

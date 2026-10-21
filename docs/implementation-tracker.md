@@ -24,9 +24,9 @@ or update path.
 | 3 | Renderer project reducer: caption operations, undo/redo, validation, selectors | `feat/renderer-state` | merged |
 | 3b | State follow-up: revision in document, stale translations, relink, load result, dirty flag, job context | `feat/renderer-state-followup` | in progress |
 | 4 | Serbian Latin diacritics in all UI strings | `fix/i18n-diacritics` | merged |
-| 5 | electron-builder packaging, electron-updater, CI and release workflows | `build/packaging-autoupdate` | in progress |
+| 5 | electron-builder packaging, electron-updater, CI and release workflows | `build/packaging-autoupdate` | merged |
 | 1b | Export follow-up: shared font factor, WrapStyle 2, SAR scaling, re-probe, paused-frame render, ffmpeg capability check | `feat/export-followup` | merged |
-| 5b | Windows NSIS installer, bundled static ffmpeg/ffprobe for Windows and Linux, CI release matrix (ubuntu + windows) | `build/windows-installer` | todo (after 5) |
+| 5b | Windows NSIS installer, bundled static ffmpeg/ffprobe for Windows and Linux, CI release matrix (ubuntu + windows) | `build/windows-installer` | in progress |
 
 ## Wave 2: wiring and UI parts
 
@@ -76,3 +76,7 @@ or update path.
 - 2026-10-22: feat/editor-captions merged (66 tests). The worker ended without committing; the orchestrator verified
   tests and committed. Fixed an i18n test bug (only the first {{placeholder}} was stripped). Renderer tests now use
   the vmForks pool (jsdom start exceeded vitest's 60 s worker timeout on the FUSE mount under load).
+- 2026-10-22: build/packaging-autoupdate merged (AppImage 114 MB, deb 88 MB, latest-linux.yml; 22 updater tests).
+  Orchestrator fixes: autoInstallOnAppQuit false, maintainer uses a GitHub noreply address. pnpm now uses the
+  hoisted linker (electron-builder stalled with the isolated one). Updater wiring in src/main/index.ts waits for
+  feat/main-wiring. Task 5b (Windows NSIS + bundled ffmpeg) started.
