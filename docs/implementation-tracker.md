@@ -22,7 +22,7 @@ or update path.
 | 1 | ASS generation, single-pass trim+burn export, SRT from caption rows, source protection, progress, cancel | `feat/export-ass` | merged |
 | 2 | Transcription with word timestamps (whisper-1), caption builder, speech-detection fallback, strict translation, staged workflow | `feat/ai-transcription` | merged |
 | 3 | Renderer project reducer: caption operations, undo/redo, validation, selectors | `feat/renderer-state` | merged |
-| 3b | State follow-up: revision in document, stale translations, relink, load result, dirty flag, job context | `feat/renderer-state-followup` | in progress |
+| 3b | State follow-up: revision in document, stale translations, relink, load result, dirty flag, job context | `feat/renderer-state-followup` | merged |
 | 4 | Serbian Latin diacritics in all UI strings | `fix/i18n-diacritics` | merged |
 | 5 | electron-builder packaging, electron-updater, CI and release workflows | `build/packaging-autoupdate` | merged |
 | 1b | Export follow-up: shared font factor, WrapStyle 2, SAR scaling, re-probe, paused-frame render, ffmpeg capability check | `feat/export-followup` | merged |
@@ -48,7 +48,8 @@ or update path.
 
 | # | Task | Branch | Status |
 | --- | --- | --- | --- |
-| 9 | Editor page and app shell integration, Settings cleanup (About and updates), i18n keys, CSS | `feat/editor-integration` | todo |
+| 9 | Editor page and app shell integration, keyboard shortcuts, quit flush, screenshots | `feat/editor-integration` | in progress |
+| 9b | Settings redesign: sections, provider/model choices with timing badges, export defaults, About with updates and ffmpeg diagnostics | `feat/settings-redesign` | in progress |
 | 10 | Sol review, E2E against a real clip, preview vs export frame comparison | `develop` | todo |
 | 11 | Release v0.2.0 | `release/0.2.0` | todo |
 
@@ -94,3 +95,5 @@ or update path.
 - 2026-10-22: Sol reviewed develop (main side) and reproduced: export temp-file collision/symlink overwrite of the
   source, replacement failure losing previous outputs, unreliable save on quit, file: navigation trusted, forged
   project paths, CI pnpm setup. Quit handshake contract added; H1 and H2 started.
+- 2026-10-22: feat/renderer-state-followup merged (208 renderer tests); orchestrator fix: the first manual translation
+  sets translationLanguage. Wave 3 started: editor integration (9) and settings redesign (9b) in parallel.
