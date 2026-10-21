@@ -15,25 +15,48 @@ export type NudgeEdge = 'start' | 'end' | 'both';
 
 export type CaptionTimingPatch = Partial<Pick<CaptionRow, 'startMs' | 'endMs' | 'original' | 'translation'>>;
 
+export type TranscriptionMeta = NonNullable<ProjectDocument['transcription']>;
+
 export type ProjectState = {
   project: ProjectDocument;
   past: ProjectDocument[];
   future: ProjectDocument[];
-  /** Increments on every content change. Used by autosave and stale-job checks. */
+  /**
+   * Increments on every content change. Always equal to `project.revision`, so
+   * the persisted document and the in-memory state agree on the revision.
+   */
   revision: number;
   lastCoalesceKey?: string;
   lastCoalesceAt?: number;
 };
 
 export type ProjectAction =
-  /** Not undoable. Clears history. Used when a saved project is loaded. */
+  /**
+   * Not undoable. Clears history. Used when a saved project is loaded. The
+   * revision continues from the loaded document and never goes backwards; the
+   * load itself is not an edit, so it does not add one.
+   */
   | { type: 'project/replace'; project: ProjectDocument }
+  /** Not undoable. Clears history and captions, since the old captions belong to the old video. */
   | { type: 'source/set'; source: ProjectSource }
+  /**
+   * Not undoable. Replaces the video but keeps captions, translations and
+   * metadata. Trim is clamped to the new duration. Used when the saved video was
+   * missing or changed on disk.
+   */
+  | { type: 'source/relink'; source: ProjectSource }
   /** Not undoable, does not bump revision. Playback URL is ephemeral. */
   | { type: 'source/updateUrl'; fileUrl: string }
   | { type: 'trim/set'; startMs: number; endMs: number }
-  | { type: 'captions/replaceAll'; captions: CaptionRow[]; sourceLanguage?: string }
-  | { type: 'captions/applyTranslations'; translations: Array<{ id: string; text: string }> }
+  | { type: 'captions/replaceAll'; captions: CaptionRow[]; sourceLanguage?: string; transcription?: TranscriptionMeta }
+  /**
+   * Stores translations and marks each touched row as made from its current
+   * original. Ignored when `targetLanguage` is given and differs from the
+   * project's current target: the result is stale (the user changed the target
+   * while the AI call was running).
+   */
+  | { type: 'captions/applyTranslations'; translations: Array<{ id: string; text: string }>; targetLanguage?: string }
+  /** A `translation` patch marks that row as up to date with its current original. */
   | { type: 'caption/update'; id: string; patch: CaptionTimingPatch; now?: number }
   | { type: 'caption/insert'; atMs: number; durationMs?: number }
   | { type: 'caption/split'; id: string; atMs: number }
@@ -62,6 +85,7 @@ export function createEmptyProject({ targetLanguage, style }: CreateEmptyProject
   return {
     schemaVersion: 1,
     id: createId(),
+    revision: 0,
     source: null,
     trim: { startMs: 0, endMs: 0 },
     targetLanguage,
@@ -73,15 +97,17 @@ export function createEmptyProject({ targetLanguage, style }: CreateEmptyProject
 }
 
 export function createProjectState(project: ProjectDocument): ProjectState {
-  return { project, past: [], future: [], revision: 0 };
+  return { project, past: [], future: [], revision: project.revision };
 }
 
 export function projectReducer(state: ProjectState, action: ProjectAction): ProjectState {
   const project = state.project;
 
   switch (action.type) {
-    case 'project/replace':
-      return { project: action.project, past: [], future: [], revision: state.revision + 1 };
+    case 'project/replace': {
+      const revision = Math.max(state.revision, action.project.revision);
+      return { project: { ...action.project, revision }, past: [], future: [], revision };
+    }
 
     case 'source/updateUrl': {
       if (!project.source || project.source.fileUrl === action.fileUrl) return state;
@@ -97,7 +123,18 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
         captions: []
       };
       delete next.sourceLanguage;
-      return applyEdit(state, next);
+      delete next.translationLanguage;
+      delete next.transcription;
+      return resetHistory(state, next);
+    }
+
+    case 'source/relink': {
+      const source = { ...action.source, durationMs: toMs(action.source.durationMs) };
+      const trim = normalizeTrim(project.trim.startMs, project.trim.endMs, source.durationMs) ?? {
+        startMs: 0,
+        endMs: source.durationMs
+      };
+      return resetHistory(state, { ...project, source, trim });
     }
 
     case 'trim/set': {
@@ -110,19 +147,40 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
     case 'captions/replaceAll': {
       const next: ProjectDocument = { ...project, captions: sortCaptions(action.captions.map(normalizeCaptionTiming)) };
       if (action.sourceLanguage !== undefined) next.sourceLanguage = action.sourceLanguage;
+      if (action.transcription !== undefined) next.transcription = action.transcription;
+      // The new captions were not produced by the last translation run.
+      delete next.translationLanguage;
       return applyEdit(state, next);
     }
 
     case 'captions/applyTranslations': {
+      if (action.targetLanguage !== undefined && action.targetLanguage !== project.targetLanguage) return state;
+
       const translations = new Map(action.translations.map((item): [string, string] => [item.id, item.text]));
       let changed = false;
       const captions = project.captions.map((caption) => {
         const text = translations.get(caption.id);
-        if (text === undefined || text === caption.translation) return caption;
+        if (text === undefined) return caption;
+        if (text === caption.translation && caption.translatedFrom === caption.original) return caption;
         changed = true;
-        return { ...caption, translation: text };
+        return withTranslatedFrom({ ...caption, translation: text }, caption.original);
       });
-      return changed ? applyEdit(state, { ...project, captions }) : state;
+
+      // Flip the project-level language only when no row keeps an older-language
+      // translation. Otherwise an untouched row would turn fresh without being
+      // translated again.
+      const hasUntouchedTranslation = captions.some(
+        (caption) => !translations.has(caption.id) && caption.translation.trim() !== ''
+      );
+      const keepOldLanguage = hasUntouchedTranslation && project.translationLanguage !== project.targetLanguage;
+      const translationLanguage = keepOldLanguage ? project.translationLanguage : project.targetLanguage;
+      const languageChanged = translationLanguage !== project.translationLanguage;
+
+      if (!changed && !languageChanged) return state;
+      const next: ProjectDocument = { ...project, captions };
+      if (translationLanguage === undefined) delete next.translationLanguage;
+      else next.translationLanguage = translationLanguage;
+      return applyEdit(state, next);
     }
 
     case 'caption/update': {
@@ -130,14 +188,16 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
       if (index < 0) return state;
       const current = project.captions[index];
       const updated = applyCaptionPatch(current, action.patch);
-      if (isShallowEqual(current, updated)) return state;
+      // A manual translation counts as up to date with the current original.
+      const next = action.patch.translation !== undefined ? withTranslatedFrom(updated, updated.original) : updated;
+      if (isShallowEqual(current, next)) return state;
 
       const timingChanged = action.patch.startMs !== undefined || action.patch.endMs !== undefined;
       const textFields = (['original', 'translation'] as const).filter((field) => action.patch[field] !== undefined);
       const coalesceKey =
         !timingChanged && textFields.length > 0 ? `caption-text:${action.id}:${textFields.join(',')}` : undefined;
 
-      const captions = sortCaptions(replaceAt(project.captions, index, updated));
+      const captions = sortCaptions(replaceAt(project.captions, index, next));
       return applyEdit(state, { ...project, captions }, { coalesceKey, at: action.now ?? Date.now() });
     }
 
@@ -166,19 +226,26 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
       const ratio = (atMs - caption.startMs) / (caption.endMs - caption.startMs);
       const [originalFirst, originalSecond] = splitTextAtRatio(caption.original, ratio);
       const [translationFirst, translationSecond] = splitTextAtRatio(caption.translation, ratio);
-      const first: CaptionRow = {
-        ...caption,
-        endMs: atMs,
-        original: originalFirst,
-        translation: translationFirst
-      };
-      const second: CaptionRow = {
-        id: createId(),
-        startMs: atMs,
-        endMs: caption.endMs,
-        original: originalSecond,
-        translation: translationSecond
-      };
+      const upToDate = isUpToDate(caption);
+      const first: CaptionRow = withTranslatedFrom(
+        {
+          ...caption,
+          endMs: atMs,
+          original: originalFirst,
+          translation: translationFirst
+        },
+        upToDate ? originalFirst : undefined
+      );
+      const second: CaptionRow = withTranslatedFrom(
+        {
+          id: createId(),
+          startMs: atMs,
+          endMs: caption.endMs,
+          original: originalSecond,
+          translation: translationSecond
+        },
+        upToDate ? originalSecond : undefined
+      );
       const captions = sortCaptions([...project.captions.slice(0, index), first, second, ...project.captions.slice(index + 1)]);
       return applyEdit(state, { ...project, captions });
     }
@@ -188,12 +255,16 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
       if (index < 0 || index >= project.captions.length - 1) return state;
       const current = project.captions[index];
       const next = project.captions[index + 1];
-      const merged: CaptionRow = {
-        ...current,
-        endMs: next.endMs,
-        original: joinText(current.original, next.original),
-        translation: joinText(current.translation, next.translation)
-      };
+      const original = joinText(current.original, next.original);
+      const merged = withTranslatedFrom(
+        {
+          ...current,
+          endMs: next.endMs,
+          original,
+          translation: joinText(current.translation, next.translation)
+        },
+        isUpToDate(current) && isUpToDate(next) ? original : undefined
+      );
       const captions = [...project.captions.slice(0, index), merged, ...project.captions.slice(index + 2)];
       return applyEdit(state, { ...project, captions });
     }
@@ -262,22 +333,24 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
     case 'history/undo': {
       const previous = state.past[state.past.length - 1];
       if (!previous) return state;
+      const revision = state.revision + 1;
       return {
-        project: { ...restoreFileUrl(previous, project), updatedAt: new Date().toISOString() },
+        project: { ...restoreFileUrl(previous, project), updatedAt: new Date().toISOString(), revision },
         past: state.past.slice(0, -1),
         future: [project, ...state.future].slice(0, HISTORY_LIMIT),
-        revision: state.revision + 1
+        revision
       };
     }
 
     case 'history/redo': {
       const next = state.future[0];
       if (!next) return state;
+      const revision = state.revision + 1;
       return {
-        project: { ...restoreFileUrl(next, project), updatedAt: new Date().toISOString() },
+        project: { ...restoreFileUrl(next, project), updatedAt: new Date().toISOString(), revision },
         past: [...state.past, project].slice(-HISTORY_LIMIT),
         future: state.future.slice(1),
-        revision: state.revision + 1
+        revision
       };
     }
   }
@@ -295,14 +368,29 @@ function applyEdit(state: ProjectState, next: ProjectDocument, options: EditOpti
     state.lastCoalesceKey === options.coalesceKey &&
     state.lastCoalesceAt !== undefined &&
     at - state.lastCoalesceAt <= COALESCE_WINDOW_MS;
+  const revision = state.revision + 1;
 
   return {
-    project: { ...next, updatedAt: new Date(at).toISOString() },
+    project: { ...next, revision, updatedAt: new Date(at).toISOString() },
     past: coalesced ? state.past : [...state.past, state.project].slice(-HISTORY_LIMIT),
     future: [],
-    revision: state.revision + 1,
+    revision,
     lastCoalesceKey: options.coalesceKey,
     lastCoalesceAt: options.coalesceKey === undefined ? undefined : at
+  };
+}
+
+/**
+ * Replaces the document as a content change that cannot be undone. Undo would
+ * otherwise bring back captions or a source that no longer match the file.
+ */
+function resetHistory(state: ProjectState, next: ProjectDocument): ProjectState {
+  const revision = state.revision + 1;
+  return {
+    project: { ...next, revision, updatedAt: new Date().toISOString() },
+    past: [],
+    future: [],
+    revision
   };
 }
 
@@ -364,6 +452,19 @@ function splitTextAtRatio(text: string, ratio: number): [string, string] {
 
 function joinText(first: string, second: string): string {
   return [first.trim(), second.trim()].filter((part) => part !== '').join(' ');
+}
+
+/** A row's translation is up to date when it was made from the row's current original. */
+function isUpToDate(caption: CaptionRow): boolean {
+  return caption.translatedFrom === caption.original;
+}
+
+/** Sets translatedFrom, or removes it when undefined, so rows never carry an undefined key. */
+function withTranslatedFrom(caption: CaptionRow, translatedFrom: string | undefined): CaptionRow {
+  const next: CaptionRow = { ...caption };
+  delete next.translatedFrom;
+  if (translatedFrom !== undefined) next.translatedFrom = translatedFrom;
+  return next;
 }
 
 function applyCaptionPatch(caption: CaptionRow, patch: CaptionTimingPatch): CaptionRow {

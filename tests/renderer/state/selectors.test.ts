@@ -5,6 +5,7 @@ import {
   blockingIssueCount,
   captionsInTrim,
   findActiveCaption,
+  rowsNeedingTranslation,
   validateCaptions,
   workflowStep,
   type CaptionIssueCode,
@@ -13,15 +14,16 @@ import {
 
 const trim: TrimRange = { startMs: 0, endMs: 10000 };
 
+/** Translated rows are up to date by default: the translation was made from the current original. */
 function caption(id: string, startMs: number, endMs: number, original = 'hello', translation = 'zdravo'): CaptionRow {
-  return { id, startMs, endMs, original, translation };
+  return { id, startMs, endMs, original, translation, translatedFrom: original };
 }
 
 function codesOf(issues: CaptionIssueMap, id: string): CaptionIssueCode[] {
   return issues[id].map((issue) => issue.code);
 }
 
-const options = { requireTranslation: true, maxCharsPerLine: 20 };
+const options = { requireTranslation: true, maxCharsPerLine: 20, targetLanguage: 'sr-Latn', translationLanguage: 'sr-Latn' };
 
 describe('findActiveCaption', () => {
   const captions = [caption('a', 0, 1000), caption('b', 1500, 2500), caption('c', 3000, 4000)];
@@ -226,7 +228,9 @@ describe('workflowStep', () => {
     durationMs: 10000,
     width: 1280,
     height: 720,
-    hasAudio: true
+    hasAudio: true,
+    fileSizeBytes: 1000,
+    mtimeMs: 1700000000000
   };
 
   it('is import without a source', () => {
@@ -243,9 +247,93 @@ describe('workflowStep', () => {
     expect(workflowStep(project({ source, captions }))).toBe('translate');
   });
 
-  it('is review when every caption is translated', () => {
+  it('is review when every caption is translated and up to date', () => {
     const captions = [caption('a', 0, 1000, 'hi', 'zdravo'), caption('b', 1000, 2000, 'yo', 'hej')];
 
-    expect(workflowStep(project({ source, captions }))).toBe('review');
+    expect(workflowStep(project({ source, captions, translationLanguage: 'sr-Latn' }))).toBe('review');
+  });
+
+  it('is translate when a translation is stale, even though none is empty', () => {
+    const captions = [{ ...caption('a', 0, 1000, 'hi', 'zdravo'), translatedFrom: 'ho' }];
+
+    expect(workflowStep(project({ source, captions, translationLanguage: 'sr-Latn' }))).toBe('translate');
+  });
+
+  it('is translate when the translations are in another language', () => {
+    const captions = [caption('a', 0, 1000, 'hi', 'zdravo')];
+
+    expect(workflowStep(project({ source, captions, translationLanguage: 'de' }))).toBe('translate');
+  });
+});
+
+describe('stale translations', () => {
+  const opts = { requireTranslation: true, maxCharsPerLine: 20, targetLanguage: 'sr-Latn', translationLanguage: 'sr-Latn' };
+
+  it('flags a non-empty translation made from older original text as a non-blocking warning', () => {
+    const captions = [{ ...caption('a', 0, 1000, 'new text', 'stari tekst'), translatedFrom: 'old text' }];
+    const issues = validateCaptions(captions, trim, opts);
+
+    expect(codesOf(issues, 'a')).toEqual(['stale_translation']);
+    expect(blockingIssueCount(issues)).toBe(0);
+  });
+
+  it('flags every translation when translationLanguage differs from the target', () => {
+    const captions = [caption('a', 0, 1000)];
+    const issues = validateCaptions(captions, trim, { ...opts, translationLanguage: 'de' });
+
+    expect(codesOf(issues, 'a')).toContain('stale_translation');
+  });
+
+  it('flags every translation when translationLanguage is unknown', () => {
+    const captions = [caption('a', 0, 1000)];
+    const issues = validateCaptions(captions, trim, { ...opts, translationLanguage: undefined });
+
+    expect(codesOf(issues, 'a')).toContain('stale_translation');
+  });
+
+  it('never flags an empty translation as stale; it is empty_translation instead', () => {
+    const captions = [{ ...caption('a', 0, 1000, 'hi', ''), translatedFrom: 'old' }];
+    const codes = codesOf(validateCaptions(captions, trim, opts), 'a');
+
+    expect(codes).toContain('empty_translation');
+    expect(codes).not.toContain('stale_translation');
+  });
+
+  it('does not flag an up-to-date translation in the target language', () => {
+    expect(codesOf(validateCaptions([caption('a', 0, 1000)], trim, opts), 'a')).toEqual([]);
+  });
+
+  it('lists rows whose translation is empty or stale, in caption order', () => {
+    const project: ProjectDocument = {
+      ...createEmptyProject({ targetLanguage: 'sr-Latn' }),
+      translationLanguage: 'sr-Latn',
+      captions: [
+        caption('fresh', 0, 1000),
+        caption('empty', 1000, 2000, 'x', ''),
+        { ...caption('stale', 2000, 3000, 'new', 'stari'), translatedFrom: 'old' }
+      ]
+    };
+
+    expect(rowsNeedingTranslation(project)).toEqual(['empty', 'stale']);
+  });
+
+  it('lists every non-empty row when translationLanguage differs from the target', () => {
+    const project: ProjectDocument = {
+      ...createEmptyProject({ targetLanguage: 'sr-Latn' }),
+      translationLanguage: 'de',
+      captions: [caption('a', 0, 1000), caption('b', 1000, 2000, 'x', '')]
+    };
+
+    expect(rowsNeedingTranslation(project)).toEqual(['a', 'b']);
+  });
+
+  it('lists nothing when every row is translated and fresh', () => {
+    const project: ProjectDocument = {
+      ...createEmptyProject({ targetLanguage: 'sr-Latn' }),
+      translationLanguage: 'sr-Latn',
+      captions: [caption('a', 0, 1000)]
+    };
+
+    expect(rowsNeedingTranslation(project)).toEqual([]);
   });
 });

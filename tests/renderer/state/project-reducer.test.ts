@@ -17,7 +17,9 @@ const source: ProjectSource = {
   durationMs: 10000,
   width: 1280,
   height: 720,
-  hasAudio: true
+  hasAudio: true,
+  fileSizeBytes: 1000,
+  mtimeMs: 1700000000000
 };
 
 function caption(id: string, startMs: number, endMs: number, original = 'hello', translation = 'zdravo'): CaptionRow {
@@ -80,12 +82,24 @@ describe('source and trim', () => {
     expect('sourceLanguage' in start.project).toBe(false);
   });
 
-  it('source/set is undoable', () => {
-    const before = stateWith([caption('a', 0, 1000)]);
-    const after = run(before, { type: 'source/set', source });
-    const undone = run(after, { type: 'history/undo' });
+  it('source/set is not undoable: it clears history, so undo cannot bring back the old video', () => {
+    const before = run(stateWith([caption('a', 0, 1000)]), { type: 'caption/delete', id: 'a' });
+    const after = run(before, { type: 'source/set', source: { ...source, inputPath: '/clips/b.mp4' } });
 
-    expect(undone.project.captions).toEqual(before.project.captions);
+    expect(after.past).toHaveLength(0);
+    expect(after.future).toHaveLength(0);
+    expect(projectReducer(after, { type: 'history/undo' })).toBe(after);
+  });
+
+  it('source/set also clears translation language and transcription metadata', () => {
+    const state = stateWith([caption('a', 0, 1000)], {
+      translationLanguage: 'sr-Latn',
+      transcription: { providerId: 'openai', timingSource: 'word' }
+    });
+    const next = run(state, { type: 'source/set', source });
+
+    expect('translationLanguage' in next.project).toBe(false);
+    expect('transcription' in next.project).toBe(false);
   });
 
   it('source/updateUrl changes the URL without bumping revision or history', () => {
@@ -171,7 +185,9 @@ describe('captions bulk operations', () => {
   });
 
   it('captions/applyTranslations is a no-op when nothing changes', () => {
-    const state = stateWith([caption('a', 0, 1000, 'one', 'jedan')]);
+    const state = stateWith([{ ...caption('a', 0, 1000, 'one', 'jedan'), translatedFrom: 'one' }], {
+      translationLanguage: 'sr-Latn'
+    });
 
     expect(projectReducer(state, { type: 'captions/applyTranslations', translations: [{ id: 'a', text: 'jedan' }] })).toBe(
       state
@@ -637,14 +653,26 @@ describe('history', () => {
     expect(undone.project.source?.fileUrl).toBe('tajtlisha-media://fresh');
   });
 
-  it('project/replace is not undoable, clears history, and bumps revision', () => {
+  it('project/replace is not undoable and clears history', () => {
     const edited = run(stateWith(), { type: 'caption/insert', atMs: 0 });
     const replaced = run(edited, { type: 'project/replace', project: stateWith().project });
 
     expect(replaced.past).toHaveLength(0);
     expect(replaced.future).toHaveLength(0);
-    expect(replaced.revision).toBe(edited.revision + 1);
     expect(replaced.project.captions).toEqual([]);
+  });
+
+  it('project/replace continues from the loaded revision and never goes backwards', () => {
+    const fromDisk = { ...stateWith().project, revision: 7 };
+    const loaded = run(stateWith(), { type: 'project/replace', project: fromDisk });
+
+    expect(loaded.revision).toBe(7);
+    expect(loaded.project.revision).toBe(7);
+
+    const older = { ...stateWith().project, revision: 3 };
+    const kept = run(loaded, { type: 'project/replace', project: older });
+    expect(kept.revision).toBe(7);
+    expect(kept.project.revision).toBe(7);
   });
 });
 
@@ -672,5 +700,230 @@ describe('revision and updatedAt', () => {
     const next = run(stateWith(), { type: 'caption/insert', atMs: 0 });
 
     expect(next.project.updatedAt).toBe('2026-03-04T05:06:07.000Z');
+  });
+});
+
+/** A caption whose translation was made from its current original (up to date). */
+function upToDate(id: string, startMs: number, endMs: number, original = 'hello', translation = 'zdravo'): CaptionRow {
+  return { ...caption(id, startMs, endMs, original, translation), translatedFrom: original };
+}
+
+describe('source/relink', () => {
+  const relinked: ProjectSource = { ...source, inputPath: '/clips/moved.mp4', fileUrl: 'tajtlisha-media://moved', durationMs: 8000 };
+
+  it('replaces the video but keeps captions, languages and transcription metadata', () => {
+    const state = stateWith([upToDate('a', 0, 1000)], {
+      sourceLanguage: 'en',
+      translationLanguage: 'sr-Latn',
+      transcription: { providerId: 'openai', modelId: 'whisper-1', timingSource: 'segment' }
+    });
+    const next = run(state, { type: 'source/relink', source: relinked });
+
+    expect(next.project.source).toEqual(relinked);
+    expect(next.project.captions).toEqual(state.project.captions);
+    expect(next.project.sourceLanguage).toBe('en');
+    expect(next.project.translationLanguage).toBe('sr-Latn');
+    expect(next.project.transcription).toEqual(state.project.transcription);
+  });
+
+  it('clamps the trim to the new duration', () => {
+    const next = run(stateWith([], { trim: { startMs: 1000, endMs: 9000 } }), { type: 'source/relink', source: relinked });
+
+    expect(next.project.trim).toEqual({ startMs: 1000, endMs: 8000 });
+  });
+
+  it('falls back to the whole new duration when the clamped trim is too short', () => {
+    const next = run(stateWith([], { trim: { startMs: 9000, endMs: 10000 } }), { type: 'source/relink', source: relinked });
+
+    expect(next.project.trim).toEqual({ startMs: 0, endMs: 8000 });
+  });
+
+  it('is not undoable: it clears history and bumps revision', () => {
+    const edited = run(stateWith([upToDate('a', 0, 1000)]), { type: 'caption/delete', id: 'a' });
+    const next = run(edited, { type: 'source/relink', source: relinked });
+
+    expect(next.past).toHaveLength(0);
+    expect(next.future).toHaveLength(0);
+    expect(next.revision).toBe(edited.revision + 1);
+  });
+});
+
+describe('translation freshness', () => {
+  it('captions/applyTranslations marks each touched row as made from its current original', () => {
+    const state = stateWith([caption('a', 0, 1000, 'one', ''), caption('b', 1000, 2000, 'two', '')]);
+    const next = run(state, {
+      type: 'captions/applyTranslations',
+      translations: [
+        { id: 'a', text: 'jedan' },
+        { id: 'b', text: 'dva' }
+      ]
+    });
+
+    expect(next.project.captions.map((item) => item.translatedFrom)).toEqual(['one', 'two']);
+    expect(next.project.translationLanguage).toBe('sr-Latn');
+  });
+
+  it('captions/applyTranslations refreshes a row whose translation text is unchanged but was stale', () => {
+    const state = stateWith([{ ...caption('a', 0, 1000, 'two', 'jedan'), translatedFrom: 'one' }]);
+    const next = run(state, { type: 'captions/applyTranslations', translations: [{ id: 'a', text: 'jedan' }] });
+
+    expect(next.project.captions[0]).toMatchObject({ translation: 'jedan', translatedFrom: 'two' });
+  });
+
+  it('captions/applyTranslations ignores a result for another target language', () => {
+    const state = stateWith([caption('a', 0, 1000, 'one', '')]);
+    const stale = projectReducer(state, {
+      type: 'captions/applyTranslations',
+      translations: [{ id: 'a', text: 'jedan' }],
+      targetLanguage: 'de'
+    });
+
+    expect(stale).toBe(state);
+  });
+
+  it('captions/applyTranslations applies a result that matches the current target language', () => {
+    const state = stateWith([caption('a', 0, 1000, 'one', '')]);
+    const next = run(state, {
+      type: 'captions/applyTranslations',
+      translations: [{ id: 'a', text: 'jedan' }],
+      targetLanguage: 'sr-Latn'
+    });
+
+    expect(next.project.captions[0].translation).toBe('jedan');
+  });
+
+  it('does not flip translationLanguage while an untouched row still holds an older-language translation', () => {
+    const state = stateWith(
+      [{ ...caption('a', 0, 1000, 'one', ''), translatedFrom: undefined }, caption('b', 1000, 2000, 'two', 'dva')],
+      { translationLanguage: 'de' }
+    );
+    const next = run(state, { type: 'captions/applyTranslations', translations: [{ id: 'a', text: 'jedan' }] });
+
+    expect(next.project.translationLanguage).toBe('de');
+    expect(next.project.captions[0].translatedFrom).toBe('one');
+    expect(next.project.captions[1].translation).toBe('dva');
+  });
+
+  it('flips translationLanguage once no untouched row holds an older-language translation', () => {
+    const state = stateWith([caption('a', 0, 1000, 'one', 'eins'), caption('b', 1000, 2000, 'two', '')], {
+      translationLanguage: 'de'
+    });
+    const next = run(state, {
+      type: 'captions/applyTranslations',
+      translations: [{ id: 'a', text: 'jedan' }]
+    });
+
+    expect(next.project.translationLanguage).toBe('sr-Latn');
+  });
+
+  it('caption/update with a translation patch marks the row as up to date with its original', () => {
+    const state = stateWith([{ ...caption('a', 0, 1000, 'hello', 'zdravo'), translatedFrom: 'hi' }]);
+    const next = run(state, { type: 'caption/update', id: 'a', patch: { translation: 'zdravo!' } });
+
+    expect(next.project.captions[0]).toMatchObject({ translation: 'zdravo!', translatedFrom: 'hello' });
+  });
+
+  it('caption/update with an original patch leaves translation and translatedFrom alone', () => {
+    const state = stateWith([{ ...caption('a', 0, 1000, 'hello', 'zdravo'), translatedFrom: 'hello' }]);
+    const next = run(state, { type: 'caption/update', id: 'a', patch: { original: 'hi there' } });
+
+    expect(next.project.captions[0]).toMatchObject({ original: 'hi there', translation: 'zdravo', translatedFrom: 'hello' });
+  });
+
+  it('caption/update with both original and translation uses the new original for translatedFrom', () => {
+    const state = stateWith([{ ...caption('a', 0, 1000, 'hello', 'zdravo'), translatedFrom: 'hello' }]);
+    const next = run(state, { type: 'caption/update', id: 'a', patch: { original: 'hi', translation: 'zdravo' } });
+
+    expect(next.project.captions[0].translatedFrom).toBe('hi');
+  });
+
+  it('caption/nudge keeps translatedFrom', () => {
+    const state = stateWith([upToDate('a', 0, 1000)]);
+    const next = run(state, { type: 'caption/nudge', id: 'a', deltaMs: 200, edge: 'both' });
+
+    expect(next.project.captions[0].translatedFrom).toBe('hello');
+  });
+
+  it('caption/split gives each half its own original when the row was up to date', () => {
+    const state = stateWith([upToDate('a', 0, 2000, 'one two', 'jedan dva')]);
+    const next = run(state, { type: 'caption/split', id: 'a', atMs: 1000 });
+
+    expect(next.project.captions.map((item) => item.translatedFrom)).toEqual(['one', 'two']);
+  });
+
+  it('caption/split leaves translatedFrom undefined when the row was stale', () => {
+    const state = stateWith([{ ...caption('a', 0, 2000, 'one two', 'jedan dva'), translatedFrom: 'old' }]);
+    const next = run(state, { type: 'caption/split', id: 'a', atMs: 1000 });
+
+    expect(next.project.captions.map((item) => item.translatedFrom)).toEqual([undefined, undefined]);
+    expect(next.project.captions.every((item) => !('translatedFrom' in item))).toBe(true);
+  });
+
+  it('caption/mergeWithNext is up to date only when both rows were', () => {
+    const bothFresh = stateWith([upToDate('a', 0, 1000, 'one', 'jedan'), upToDate('b', 1000, 2000, 'two', 'dva')]);
+    const merged = run(bothFresh, { type: 'caption/mergeWithNext', id: 'a' });
+    expect(merged.project.captions[0]).toMatchObject({ original: 'one two', translatedFrom: 'one two' });
+
+    const oneStale = stateWith([
+      upToDate('a', 0, 1000, 'one', 'jedan'),
+      { ...caption('b', 1000, 2000, 'two', 'dva'), translatedFrom: 'old' }
+    ]);
+    const mergedStale = run(oneStale, { type: 'caption/mergeWithNext', id: 'a' });
+    expect(mergedStale.project.captions[0].translatedFrom).toBeUndefined();
+  });
+
+  it('captions/replaceAll stores transcription metadata and clears translationLanguage', () => {
+    const state = stateWith([], { translationLanguage: 'sr-Latn' });
+    const next = run(state, {
+      type: 'captions/replaceAll',
+      captions: [caption('a', 0, 1000, 'hi', '')],
+      transcription: { providerId: 'openai', modelId: 'whisper-1', timingSource: 'word' }
+    });
+
+    expect(next.project.transcription).toEqual({ providerId: 'openai', modelId: 'whisper-1', timingSource: 'word' });
+    expect('translationLanguage' in next.project).toBe(false);
+  });
+
+  it('captions/replaceAll keeps existing transcription metadata when none is given', () => {
+    const transcription = { providerId: 'openai', timingSource: 'segment' as const };
+    const state = stateWith([], { transcription });
+    const next = run(state, { type: 'captions/replaceAll', captions: [caption('a', 0, 1000, 'hi', '')] });
+
+    expect(next.project.transcription).toEqual(transcription);
+  });
+
+  it('languages/set changes the target without touching translationLanguage', () => {
+    const state = stateWith([upToDate('a', 0, 1000)], { translationLanguage: 'sr-Latn' });
+    const next = run(state, { type: 'languages/set', targetLanguage: 'de' });
+
+    expect(next.project.translationLanguage).toBe('sr-Latn');
+    expect(next.project.targetLanguage).toBe('de');
+  });
+});
+
+describe('revision mirror', () => {
+  it('keeps project.revision equal to state.revision through every kind of action', () => {
+    const actions: ProjectAction[] = [
+      { type: 'source/set', source },
+      { type: 'trim/set', startMs: 0, endMs: 5000 },
+      { type: 'caption/insert', atMs: 0 },
+      { type: 'source/updateUrl', fileUrl: 'tajtlisha-media://x' },
+      { type: 'languages/set', targetLanguage: 'de' },
+      { type: 'style/set', patch: { fontSizePercent: 6 } },
+      { type: 'history/undo' },
+      { type: 'history/redo' },
+      { type: 'source/relink', source: { ...source, fileUrl: 'tajtlisha-media://y' } },
+      { type: 'project/replace', project: { ...stateWith().project, revision: 40 } }
+    ];
+    let state = stateWith();
+    for (const action of actions) {
+      state = projectReducer(state, action);
+      expect(state.project.revision).toBe(state.revision);
+    }
+    expect(state.revision).toBe(40);
+  });
+
+  it('createEmptyProject starts at revision 0', () => {
+    expect(createEmptyProject({ targetLanguage: 'en' }).revision).toBe(0);
   });
 });

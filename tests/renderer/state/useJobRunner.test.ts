@@ -1,6 +1,13 @@
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
-import { useJobRunner, type JobRunResult } from '../../../src/renderer/src/state/useJobRunner';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ProjectDocument } from '../../../src/shared/types/project';
+import { createEmptyProject } from '../../../src/renderer/src/state/project-reducer';
+import {
+  captureJobContext,
+  isContextCurrent,
+  useJobRunner,
+  type JobRunResult
+} from '../../../src/renderer/src/state/useJobRunner';
 import { createFakeApi } from './fakeApi';
 
 type Gate<T> = { promise: Promise<T>; resolve: (value: T) => void; reject: (error: Error) => void };
@@ -16,6 +23,10 @@ function gate<T>(): Gate<T> {
 }
 
 describe('useJobRunner', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('returns done with the work value and clears the job afterwards', async () => {
     const fake = createFakeApi();
     const { result } = renderHook(() => useJobRunner(fake.api));
@@ -270,10 +281,76 @@ describe('useJobRunner', () => {
   });
 
   it('runs work without progress or cancel support when no api is available', async () => {
+    // The hook falls back to window.tajtlisha when no api is passed; make sure there is none.
+    vi.stubGlobal('tajtlisha', undefined);
     const { result } = renderHook(() => useJobRunner(undefined));
 
     const outcome = await result.current.run('preview', async () => 'local');
     expect(outcome).toEqual({ status: 'done', value: 'local' });
     await expect(result.current.cancel()).resolves.toBeUndefined();
+  });
+});
+
+describe('job context', () => {
+  function withSource(path: string | null, overrides: Partial<ProjectDocument> = {}): ProjectDocument {
+    const base = createEmptyProject({ targetLanguage: 'en' });
+    return {
+      ...base,
+      revision: 3,
+      ...(path === null
+        ? {}
+        : {
+            source: {
+              inputPath: path,
+              fileUrl: 'tajtlisha-media://a',
+              durationMs: 5000,
+              width: 1,
+              height: 1,
+              hasAudio: false,
+              fileSizeBytes: 1000,
+              mtimeMs: 1700000000000
+            }
+          }),
+      ...overrides
+    };
+  }
+
+  it('captures the project id, revision and source path, with null when there is no source', () => {
+    const project = withSource('/clips/a.mp4');
+
+    expect(captureJobContext(project)).toEqual({ projectId: project.id, revision: 3, inputPath: '/clips/a.mp4' });
+    expect(captureJobContext(withSource(null)).inputPath).toBeNull();
+  });
+
+  it('is current while nothing relevant changed', () => {
+    const project = withSource('/clips/a.mp4');
+    const context = captureJobContext(project);
+
+    expect(isContextCurrent(context, project)).toBe(true);
+  });
+
+  it('is not current after an edit by default (transcription must not replace newer captions)', () => {
+    const project = withSource('/clips/a.mp4');
+    const context = captureJobContext(project);
+    const edited = { ...project, revision: 4 };
+
+    expect(isContextCurrent(context, edited)).toBe(false);
+  });
+
+  it('accepts edits since the job started when allowEditsSince is set (export)', () => {
+    const project = withSource('/clips/a.mp4');
+    const context = captureJobContext(project);
+    const edited = { ...project, revision: 9 };
+
+    expect(isContextCurrent(context, edited, { allowEditsSince: true })).toBe(true);
+  });
+
+  it('is never current for another project id or a different source path, even with allowEditsSince', () => {
+    const project = withSource('/clips/a.mp4');
+    const context = captureJobContext(project);
+
+    expect(isContextCurrent(context, { ...project, id: 'other' }, { allowEditsSince: true })).toBe(false);
+    expect(isContextCurrent(context, withSource('/clips/b.mp4', { id: project.id }), { allowEditsSince: true })).toBe(false);
+    expect(isContextCurrent(context, withSource(null, { id: project.id }), { allowEditsSince: true })).toBe(false);
   });
 });
