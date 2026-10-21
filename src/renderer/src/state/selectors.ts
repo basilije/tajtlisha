@@ -8,7 +8,8 @@ export type CaptionIssueCode =
   | 'empty_original'
   | 'empty_translation'
   | 'too_short'
-  | 'line_too_long';
+  | 'line_too_long'
+  | 'stale_translation';
 
 export type CaptionIssue = {
   code: CaptionIssueCode;
@@ -22,6 +23,10 @@ export type CaptionIssueMap = Record<string, CaptionIssue[]>;
 export type CaptionValidationOptions = {
   requireTranslation: boolean;
   maxCharsPerLine: number;
+  /** ProjectDocument.translationLanguage. Undefined means unknown, which makes non-empty translations stale. */
+  translationLanguage?: string;
+  /** ProjectDocument.targetLanguage. */
+  targetLanguage: string;
 };
 
 export type WorkflowStep = 'import' | 'trim' | 'translate' | 'review';
@@ -70,6 +75,7 @@ export function validateCaptions(
   // that covers several later rows flags each of them.
   const sorted = [...captions].sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
   const lineLimit = options.maxCharsPerLine + LINE_LENGTH_SLACK;
+  const languageStale = options.translationLanguage !== options.targetLanguage;
   let latestEnd = Number.NEGATIVE_INFINITY;
 
   for (const caption of sorted) {
@@ -95,6 +101,9 @@ export function validateCaptions(
     }
     if (options.requireTranslation && caption.translation.trim() === '') {
       issues.push({ code: 'empty_translation' });
+    }
+    if (isStaleTranslation(caption, languageStale)) {
+      issues.push({ code: 'stale_translation' });
     }
     if (longestLine(caption.original) > lineLimit || longestLine(caption.translation) > lineLimit) {
       issues.push({ code: 'line_too_long' });
@@ -128,8 +137,29 @@ export function captionsInTrim(captions: readonly CaptionRow[], trim: TrimRange)
 export function workflowStep(project: ProjectDocument): WorkflowStep {
   if (!project.source) return 'import';
   if (project.captions.length === 0) return 'trim';
-  const someUntranslated = project.captions.some((caption) => caption.translation.trim() === '');
-  return someUntranslated ? 'translate' : 'review';
+  return rowsNeedingTranslation(project).length > 0 ? 'translate' : 'review';
+}
+
+/**
+ * Ids of rows that "translate again" should send: empty translations and stale
+ * ones. Manually fixed translations stay out as long as they match the current
+ * original and the project language.
+ */
+export function rowsNeedingTranslation(project: ProjectDocument): string[] {
+  const languageStale = project.translationLanguage !== project.targetLanguage;
+  return project.captions
+    .filter((caption) => caption.translation.trim() === '' || isStaleTranslation(caption, languageStale))
+    .map((caption) => caption.id);
+}
+
+/**
+ * A non-empty translation is stale when it was made from different original
+ * text, or when the project's translations are in another language. Stale rows
+ * are marked, never cleared, so manual fixes are kept.
+ */
+function isStaleTranslation(caption: CaptionRow, languageStale: boolean): boolean {
+  if (caption.translation.trim() === '') return false;
+  return languageStale || caption.translatedFrom !== caption.original;
 }
 
 function isIssueList(value: CaptionIssueMap | readonly CaptionIssue[]): value is readonly CaptionIssue[] {

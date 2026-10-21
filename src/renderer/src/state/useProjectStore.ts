@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useReducer, useRef, useState, type Dispatch } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { parseAppErrorMessage } from '../../../shared/errors';
 import type { TajtlishaApi } from '../../../shared/types/ipc';
-import type { ProjectDocument } from '../../../shared/types/project';
+import type { ProjectDocument, ProjectLoadResult } from '../../../shared/types/project';
 import {
   createEmptyProject,
   createProjectState,
@@ -12,6 +12,8 @@ import {
 
 export const AUTOSAVE_DELAY_MS = 800;
 
+export type SourceStatus = ProjectLoadResult['sourceStatus'];
+
 export type UseProjectStoreOptions = {
   /** Target language for the empty project created when nothing is saved. Read on mount only. */
   targetLanguage: string;
@@ -21,11 +23,19 @@ export type UseProjectStoreOptions = {
 
 export type ProjectStore = {
   state: ProjectState;
-  dispatch: Dispatch<ProjectAction>;
+  dispatch: (action: ProjectAction) => void;
   /** True once the last saved project has been loaded (or loading failed). */
   ready: boolean;
   /** Message from the last failed load or save. Cleared on a successful save. */
   saveError: string | null;
+  /**
+   * Video status from the last load. 'missing' and 'changed' mean the video
+   * should be relinked. Null when no saved project was loaded. Becomes 'ok'
+   * after source/set or source/relink.
+   */
+  sourceStatus: SourceStatus | null;
+  /** True when edits exist that the last successful save did not cover. A failed save keeps this true. */
+  isDirty: boolean;
 };
 
 type PendingSave = { project: ProjectDocument; revision: number };
@@ -34,21 +44,27 @@ export function useProjectStore(options: UseProjectStoreOptions): ProjectStore {
   const { targetLanguage } = options;
   const api = options.api ?? getWindowApi();
 
-  const [state, dispatch] = useReducer(projectReducer, targetLanguage, (language) =>
+  const [state, rawDispatch] = useReducer(projectReducer, targetLanguage, (language) =>
     createProjectState(createEmptyProject({ targetLanguage: language }))
   );
   const [ready, setReady] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [sourceStatus, setSourceStatus] = useState<SourceStatus | null>(null);
+  // Mirrors savedRevisionRef for rendering. The ref drives autosave logic.
+  const [savedRevision, setSavedRevision] = useState(state.revision);
 
-  // Project object returned by loadLast. Its identity marks the revision that
-  // came from disk, so it is not written back right after load.
-  const loadedProjectRef = useRef<ProjectDocument | null>(null);
-  // Starts at the initial revision: the empty project is not persisted until edited.
+  // Highest revision known to be on disk. Starts at the initial revision: the
+  // empty project is not persisted until edited. Set to the loaded revision on load.
   const savedRevisionRef = useRef(state.revision);
   // Set when loading failed. Autosave stays off so an empty project never overwrites the saved file.
   const persistBlockedRef = useRef(false);
   const pendingRef = useRef<PendingSave | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const markSaved = useCallback((revision: number) => {
+    savedRevisionRef.current = Math.max(savedRevisionRef.current, revision);
+    setSavedRevision(savedRevisionRef.current);
+  }, []);
 
   const flush = useCallback(() => {
     if (timerRef.current !== null) {
@@ -59,9 +75,9 @@ export function useProjectStore(options: UseProjectStoreOptions): ProjectStore {
     if (!pending || !api) return;
     pendingRef.current = null;
 
-    persistProject(api, pending.project).then(
-      () => {
-        savedRevisionRef.current = Math.max(savedRevisionRef.current, pending.revision);
+    api.project.save(pending.project).then(
+      (result) => {
+        markSaved(result.savedRevision);
         setSaveError(null);
       },
       (error: unknown) => {
@@ -70,7 +86,15 @@ export function useProjectStore(options: UseProjectStoreOptions): ProjectStore {
         setSaveError(toErrorMessage(error));
       }
     );
-  }, [api]);
+  }, [api, markSaved]);
+
+  const dispatch = useCallback((action: ProjectAction) => {
+    if (action.type === 'source/set' || action.type === 'source/relink') {
+      // A new or relinked video is playable, so a missing/changed warning no longer applies.
+      setSourceStatus((current) => (current === null ? null : 'ok'));
+    }
+    rawDispatch(action);
+  }, []);
 
   useEffect(() => {
     if (!api) {
@@ -79,11 +103,13 @@ export function useProjectStore(options: UseProjectStoreOptions): ProjectStore {
     }
     let cancelled = false;
     api.project.loadLast().then(
-      (project) => {
+      (result) => {
         if (cancelled) return;
-        if (project) {
-          loadedProjectRef.current = project;
-          dispatch({ type: 'project/replace', project });
+        if (result) {
+          // The loaded revision is what is on disk, so nothing is dirty right after load.
+          dispatch({ type: 'project/replace', project: result.project });
+          markSaved(result.project.revision);
+          setSourceStatus(result.sourceStatus);
         }
         setReady(true);
       },
@@ -97,17 +123,11 @@ export function useProjectStore(options: UseProjectStoreOptions): ProjectStore {
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, dispatch, markSaved]);
 
   useEffect(() => {
     if (!ready || !api || persistBlockedRef.current) return;
-
-    if (state.project === loadedProjectRef.current) {
-      loadedProjectRef.current = null;
-      savedRevisionRef.current = state.revision;
-      return;
-    }
-    if (state.revision === savedRevisionRef.current) return;
+    if (state.revision <= savedRevisionRef.current) return;
 
     pendingRef.current = { project: state.project, revision: state.revision };
     if (timerRef.current !== null) clearTimeout(timerRef.current);
@@ -123,11 +143,14 @@ export function useProjectStore(options: UseProjectStoreOptions): ProjectStore {
     };
   }, [flush]);
 
-  return { state, dispatch, ready, saveError };
-}
-
-async function persistProject(api: TajtlishaApi, project: ProjectDocument): Promise<void> {
-  await api.project.save(project);
+  return {
+    state,
+    dispatch,
+    ready,
+    saveError,
+    sourceStatus,
+    isDirty: state.revision > savedRevision
+  };
 }
 
 function getWindowApi(): TajtlishaApi | undefined {
