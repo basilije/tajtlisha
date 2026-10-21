@@ -1,12 +1,14 @@
 import { AppError } from '../../shared/errors';
 import { IPC_CHANNELS } from '../../shared/types/ipc';
-import type { ProjectDocument, ProjectSource } from '../../shared/types/project';
+import type { ProjectSource } from '../../shared/types/project';
 import type { PreviewFrameRequest, PreviewFrameResult, ProjectExportService } from '../export';
 import type { MediaService } from '../media';
 import { type JobRegistry, runJob } from '../jobs/job-registry';
 import type { MainStrings } from '../i18n';
 import { defaultStatFile, type ProjectStore, type StatFile } from '../project/project-store';
 import type { PreviewProxyCache } from '../project/preview-proxy-cache';
+import { KnownSources, requireKnownSource } from '../project/known-sources';
+import { validateProjectDocument } from '../project/project-schema';
 import {
   requireFiniteNumber,
   requireJobId,
@@ -27,6 +29,8 @@ export type ProjectIpcDeps = {
   /** Protocol URL for a local file; the same path always yields the same URL. */
   createVideoUrl: (inputPath: string) => string;
   strings: () => Promise<MainStrings>;
+  /** Inputs the renderer may reference: picked this session or loaded from a project. */
+  sources: KnownSources;
   statFile?: StatFile;
 };
 
@@ -43,6 +47,7 @@ export function registerProjectIpc({
   exporter,
   createVideoUrl,
   strings,
+  sources,
   statFile = defaultStatFile
 }: ProjectIpcDeps): void {
   ipc.handle(IPC_CHANNELS.projectSelectVideo, async () => {
@@ -55,21 +60,33 @@ export function registerProjectIpc({
     const inputPath = result.canceled ? undefined : result.filePaths[0];
     if (!inputPath) return null;
 
-    return buildProjectSource(inputPath);
+    const source = await buildProjectSource(inputPath);
+    sources.remember(inputPath);
+    return source;
   });
 
-  ipc.handle(IPC_CHANNELS.projectLoadLast, () => projectStore.loadLast());
+  ipc.handle(IPC_CHANNELS.projectLoadLast, async () => {
+    const result = await projectStore.loadLast();
+    // Only a source that comes back with a playback URL is one the renderer may use.
+    const source = result?.project.source;
+    if (source && source.fileUrl !== '') {
+      sources.remember(source.inputPath);
+    }
+    return result;
+  });
 
-  ipc.handle(IPC_CHANNELS.projectSave, (_event, payload: unknown) => projectStore.save(toProjectDocument(payload)));
+  ipc.handle(IPC_CHANNELS.projectSave, (_event, payload: unknown) => projectStore.save(validateProjectDocument(payload)));
 
   ipc.handle(IPC_CHANNELS.projectCreatePreviewProxy, (event, payload: unknown) => {
     const input = requireRecord(payload, 'request');
     const jobId = requireJobId(input.jobId);
-    const inputPath = requireString(input.inputPath, 'inputPath');
+    const inputPath = requireKnownSource(sources, requireString(input.inputPath, 'inputPath'));
 
     return runJob(jobs, event.sender, jobId, async (context) => {
       context.onProgress({ stage: 'rendering_video', progress: 0 });
-      const outputPath = await previewProxies.get(inputPath, async (output) => {
+      // The fingerprint keeps a cached preview from outliving a replaced source file.
+      const { size, mtimeMs } = await statFile(inputPath);
+      const outputPath = await previewProxies.get(inputPath, { size, mtimeMs }, async (output) => {
         const { durationMs } = await mediaService.probe({ inputPath });
         await mediaService.createPreviewProxy(inputPath, output, {
           signal: context.signal,
@@ -86,6 +103,7 @@ export function registerProjectIpc({
 
   ipc.handle(IPC_CHANNELS.projectRenderPreviewFrame, (_event, payload: unknown): Promise<PreviewFrameResult> => {
     const request = toPreviewFrameRequest(payload);
+    requireKnownSource(sources, request.inputPath);
     return exporter.renderPreviewFrame(request);
   });
 
@@ -121,14 +139,6 @@ export function registerProjectIpc({
       mtimeMs: stats.mtimeMs
     };
   }
-}
-
-function toProjectDocument(payload: unknown): ProjectDocument {
-  const input = requireRecord(payload, 'project');
-  requireString(input.id, 'project.id');
-  requireFiniteNumber(input.revision, 'project.revision');
-  // Structural checks beyond id and revision happen in ProjectStore on load.
-  return input as unknown as ProjectDocument;
 }
 
 function toPreviewFrameRequest(payload: unknown): PreviewFrameRequest {

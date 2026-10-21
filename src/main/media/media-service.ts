@@ -113,6 +113,9 @@ export class MediaService {
       '0:v:0',
       '-map',
       '0:a:0?',
+      // yuv420p needs even dimensions; odd sources (e.g. 321x241) fail without this.
+      '-vf',
+      'scale=trunc(iw/2)*2:trunc(ih/2)*2',
       '-c:v',
       'libx264',
       '-preset',

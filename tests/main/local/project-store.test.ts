@@ -2,9 +2,10 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectDocument, ProjectSource } from '../../../src/shared/types/project';
 import { ProjectStore } from '../../../src/main/project/project-store';
+import { DEFAULT_SUBTITLE_STYLE } from '../../../src/shared/subtitle-geometry';
 
 let root: string;
 let projectsDir: string;
@@ -21,8 +22,15 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-function createStore(): ProjectStore {
-  return new ProjectStore({ dir: projectsDir, createVideoUrl: (path) => `tajtlisha-media://video/${encodeURIComponent(path)}` });
+/** Stands in for ffprobe: every test file counts as a video unless a test says otherwise. */
+const probeHasVideo = async () => true;
+
+function createStore(probeVideo: (path: string) => Promise<boolean> = probeHasVideo): ProjectStore {
+  return new ProjectStore({
+    dir: projectsDir,
+    createVideoUrl: (path) => `tajtlisha-media://video/${encodeURIComponent(path)}`,
+    probeVideo
+  });
 }
 
 async function sourceFor(path = videoPath, overrides: Partial<ProjectSource> = {}): Promise<ProjectSource> {
@@ -49,7 +57,7 @@ function documentFor(id: string, revision: number, source: ProjectSource | null,
     trim: { startMs: 0, endMs: 4000 },
     targetLanguage: 'sr-Latn',
     captions: [{ id: 'c1', startMs: 0, endMs: 1000, original: captionText, translation: '' }],
-    style: { fontFamily: 'Noto Sans', fontSizePercent: 5 } as ProjectDocument['style'],
+    style: DEFAULT_SUBTITLE_STYLE,
     previewTrack: 'original',
     updatedAt: '2026-10-22T10:00:00.000Z'
   };
@@ -157,6 +165,84 @@ describe('ProjectStore source status on load', () => {
     await store.save(documentFor('p1', 1, null));
 
     expect(await store.loadLast()).toMatchObject({ sourceStatus: 'ok', project: { source: null } });
+  });
+});
+
+describe('ProjectStore playback URLs', () => {
+  it('does not mint a URL when the probe finds no video stream', async () => {
+    await createStore().save(documentFor('p1', 1, await sourceFor()));
+
+    const loaded = await createStore(async () => false).loadLast();
+
+    expect(loaded?.sourceStatus).toBe('missing');
+    expect(loaded?.project.source?.fileUrl).toBe('');
+    expect(loaded?.project.captions).toHaveLength(1);
+  });
+
+  it('does not mint a URL for a relative path', async () => {
+    const relative = await sourceFor(videoPath, { inputPath: 'clip.mp4' });
+    await createStore().save(documentFor('p1', 1, relative));
+
+    expect((await createStore().loadLast())?.sourceStatus).toBe('missing');
+  });
+
+  it('does not mint a URL for a directory', async () => {
+    const directory = join(root, 'folder.mp4');
+    await mkdir(directory);
+    await createStore().save(documentFor('p1', 1, await sourceFor(videoPath, { inputPath: directory })));
+
+    const loaded = await createStore().loadLast();
+
+    expect(loaded?.sourceStatus).toBe('missing');
+    expect(loaded?.project.source?.fileUrl).toBe('');
+  });
+
+  it('probes the file on load, so a forged project pointing at a non-video is refused', async () => {
+    await createStore().save(documentFor('p1', 1, await sourceFor()));
+    const probe = vi.fn(async () => false);
+
+    await createStore(probe).loadLast();
+
+    expect(probe).toHaveBeenCalledWith(videoPath);
+  });
+});
+
+describe('ProjectStore validation', () => {
+  it('rejects an invalid document on save and keeps the file already on disk', async () => {
+    const store = createStore();
+    await store.save(documentFor('p1', 1, null, 'kept'));
+    const { style: _style, ...withoutStyle } = documentFor('p1', 2, null, 'rejected');
+
+    await expect(store.save(withoutStyle as ProjectDocument)).rejects.toThrow('[UNKNOWN] invalid project: project.style');
+
+    const loaded = await store.loadLast();
+    expect(loaded?.project.revision).toBe(1);
+    expect(loaded?.project.captions[0]?.original).toBe('kept');
+  });
+
+  it('drops unknown fields before writing, at document and caption level', async () => {
+    const store = createStore();
+    const doc = {
+      ...documentFor('p1', 1, null),
+      secret: 'do not persist',
+      captions: [{ id: 'c1', startMs: 0, endMs: 1000, original: 'a', translation: '', hidden: true }]
+    } as unknown as ProjectDocument;
+
+    await store.save(doc);
+
+    const onDisk = JSON.parse(await readFile(join(projectsDir, 'p1.json'), 'utf8')) as Record<string, unknown>;
+    expect(onDisk).not.toHaveProperty('secret');
+    expect(onDisk.captions).toEqual([{ id: 'c1', startMs: 0, endMs: 1000, original: 'a', translation: '' }]);
+  });
+
+  it('moves a document that fails validation on load aside, even when its JSON parses', async () => {
+    await mkdir(projectsDir, { recursive: true });
+    const { style: _style, ...withoutStyle } = documentFor('p1', 1, null);
+    await writeFile(join(projectsDir, 'p1.json'), JSON.stringify(withoutStyle));
+    await writeFile(join(projectsDir, 'last.json'), JSON.stringify({ projectId: 'p1' }));
+
+    expect(await createStore().loadLast()).toBeNull();
+    expect((await readdir(projectsDir)).some((name) => /^p1\.corrupt-\d+\.json$/.test(name))).toBe(true);
   });
 });
 

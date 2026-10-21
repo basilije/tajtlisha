@@ -1,7 +1,13 @@
 import type { JobOwner } from '../jobs/job-registry';
 
-/** The subset of IpcMainInvokeEvent the handlers read. Electron's event satisfies it. */
-export type IpcEvent = { sender: JobOwner };
+/** The frame that sent an IPC message. Electron's WebFrameMain satisfies it. */
+export type SenderFrame = { url: string; parent: object | null };
+
+/**
+ * The subset of IpcMainInvokeEvent the handlers read. Electron's event satisfies
+ * it. `senderFrame` is only read by the trust check, so tests may leave it out.
+ */
+export type IpcEvent = { sender: JobOwner; senderFrame?: SenderFrame | null };
 
 /**
  * Only `handle` is used. Electron's ipcMain satisfies this, and tests pass a
