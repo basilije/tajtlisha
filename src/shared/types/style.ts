@@ -10,7 +10,7 @@ export type SubtitleStyle = {
   presetId?: SubtitlePresetId;
   /** Font family name. Must be one of SUBTITLE_FONT_FAMILIES (bundled fonts). */
   fontFamily: string;
-  /** Font size as a percentage of the video height. Range 2..12. */
+  /** Font size as a percentage of the video's shorter side (width on vertical clips). Range 2..12. */
   fontSizePercent: number;
   bold: boolean;
   italic: boolean;

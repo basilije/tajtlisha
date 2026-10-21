@@ -1,7 +1,6 @@
 import type { ReactElement, ReactNode } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useTranslation } from 'react-i18next';
-import X from 'lucide-react/dist/esm/icons/x.js';
 
 export type SettingsSheetProps = {
   open: boolean;
@@ -16,20 +15,15 @@ export type SettingsSheetProps = {
 export function SettingsSheet({ open, onOpenChange, children }: SettingsSheetProps): ReactElement {
   const { t } = useTranslation();
 
+  // The settings page renders its own visible header and close button; the
+  // dialog only provides the full-window layer, focus trap and Esc handling.
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Content className="settings-sheet">
-          <div className="settings-sheet-header">
-            <Dialog.Title className="settings-sheet-title">{t('shell.settings.title')}</Dialog.Title>
-            <Dialog.Close asChild>
-              <button type="button" className="btn btn-icon btn-ghost" aria-label={t('shell.settings.close')} title={t('shell.settings.close')}>
-                <X aria-hidden="true" size={16} />
-              </button>
-            </Dialog.Close>
-          </div>
+        <Dialog.Content className="settings-overlay">
+          <Dialog.Title className="visually-hidden">{t('shell.settings.title')}</Dialog.Title>
           <Dialog.Description className="visually-hidden">{t('shell.settings.title')}</Dialog.Description>
-          <div className="settings-sheet-body">{children}</div>
+          {children}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

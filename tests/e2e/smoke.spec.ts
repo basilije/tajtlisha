@@ -8,6 +8,7 @@ import { join } from 'node:path';
 type RendererGlobal = typeof globalThis & {
   tajtlisha: {
     project: {
+      selectVideo(): Promise<{ inputPath: string; width: number; height: number } | null>;
       createPreviewProxy(input: { jobId: string; inputPath: string }): Promise<{ fileUrl: string }>;
     };
   };
@@ -77,6 +78,16 @@ test('plays an ffmpeg preview proxy through the local media protocol', async () 
   const app = await electron.launch({ args: [mainEntry] });
   try {
     const page = await app.firstWindow();
+    // Main only processes videos opened through the app, so open it through the
+    // real selectVideo handler with the native file dialog stubbed.
+    await app.evaluate(({ dialog }, sourcePath) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [sourcePath] });
+    }, inputPath);
+    const source = await page.evaluate(() => (globalThis as RendererGlobal).tajtlisha.project.selectVideo());
+    expect(source?.inputPath).toBe(inputPath);
+    expect(source?.width).toBe(320);
+    expect(source?.height).toBe(180);
+
     const preview = await page.evaluate(
       (sourcePath) =>
         (globalThis as RendererGlobal).tajtlisha.project.createPreviewProxy({

@@ -60,7 +60,9 @@ export function assFontSize(style: SubtitleStyle, geometry: SubtitleGeometry): n
 export function computeSubtitleGeometry(style: SubtitleStyle, frameWidth: number, frameHeight: number): SubtitleGeometry {
   const width = Math.max(1, frameWidth);
   const height = Math.max(1, frameHeight);
-  const fontSizePx = (height * clamp(style.fontSizePercent, 2, 12)) / 100;
+  // Relative to the SHORTER side: on vertical 9:16 clips the width limits how
+  // much text fits, on landscape clips the height does.
+  const fontSizePx = (Math.min(width, height) * clamp(style.fontSizePercent, 2, 12)) / 100;
   const outlinePx =
     style.outlineEnabled && !style.backgroundEnabled ? (fontSizePx * clamp(style.outlineWidthPercent, 0, 20)) / 100 : 0;
 
@@ -84,7 +86,7 @@ export function clamp(value: number, min: number, max: number): number {
 export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
   presetId: 'clean',
   fontFamily: 'Noto Sans',
-  fontSizePercent: 4.5,
+  fontSizePercent: 5.5,
   bold: true,
   italic: false,
   textColor: '#ffffff',
@@ -117,7 +119,7 @@ export const SUBTITLE_PRESETS: Record<SubtitlePresetId, SubtitleStyle> = {
   bold_yellow: {
     ...DEFAULT_SUBTITLE_STYLE,
     presetId: 'bold_yellow',
-    fontSizePercent: 5.2,
+    fontSizePercent: 6.2,
     textColor: '#ffd84a',
     outlineWidthPercent: 11
   }

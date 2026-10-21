@@ -24,9 +24,9 @@ describe('ASS document', () => {
   it('sizes the font from the shared geometry so the rendered em equals the geometry font size', () => {
     const style = styleLine(buildAssDocument({ captions: [], style: DEFAULT_SUBTITLE_STYLE, videoWidth: 720, videoHeight: 1280 }));
 
-    // Geometry: 4.5% of 1280 = 57.6 px em. libass takes Fontsize as win ascent + descent, so 57.6 * 1.519 = 87.49 -> 87.5 (shared rounding to 0.1).
-    expect(computeSubtitleGeometry(DEFAULT_SUBTITLE_STYLE, 720, 1280).fontSizePx).toBeCloseTo(57.6);
-    expect(style.Fontsize).toBe('87.5');
+    // Geometry: 5.5% of the shorter side (720) = 39.6 px em. libass takes Fontsize as win ascent + descent, so 39.6 * 1.519 = 60.15 -> 60.2 (shared rounding to 0.1).
+    expect(computeSubtitleGeometry(DEFAULT_SUBTITLE_STYLE, 720, 1280).fontSizePx).toBeCloseTo(39.6);
+    expect(style.Fontsize).toBe('60.2');
     expect(style.Fontname).toBe('Noto Sans');
     expect(style.Encoding).toBe('1');
     expect(style.Name).toBe('Default');
@@ -34,7 +34,7 @@ describe('ASS document', () => {
 
   it('uses the shared font factor for the ASS Fontsize', () => {
     const geometry = computeSubtitleGeometry(DEFAULT_SUBTITLE_STYLE, 720, 1280);
-    expect(assFontSize(DEFAULT_SUBTITLE_STYLE, geometry)).toBeCloseTo(87.5, 0);
+    expect(assFontSize(DEFAULT_SUBTITLE_STYLE, geometry)).toBeCloseTo(60.2, 0);
 
     const unknown = { ...DEFAULT_SUBTITLE_STYLE, fontFamily: 'Unknown Sans' };
     expect(assFontSize(unknown, computeSubtitleGeometry(unknown, 720, 1280))).toBeCloseTo(geometry.fontSizePx * 1.519, 1);

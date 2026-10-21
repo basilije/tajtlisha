@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SettingsPage } from '../../../src/renderer/src/pages/SettingsPage';
-import { mockProviderStatuses, mockSettings } from '../../../src/renderer/src/mocks/settings';
+import { mockProviderStatuses, mockSettings } from './mockSettings';
 import { renderWithI18n } from '../renderWithI18n';
 import { installFakeApi, removeFakeApi, fullFfmpegStatus, updateState } from './fixtures';
 

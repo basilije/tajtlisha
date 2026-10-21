@@ -226,6 +226,7 @@ export function WorkspaceShell({ runtime }: WorkspaceShellProps): ReactElement {
           onDisconnectProvider={runtime.disconnectProvider}
           onTestProvider={runtime.testProvider}
           onListModels={runtime.listModels}
+          onClose={() => setSettingsOpen(false)}
         />
       </SettingsSheet>
     </div>

@@ -84,7 +84,7 @@ describe('StyleDrawer', () => {
   it('ignores out-of-range numbers instead of sending them', () => {
     const { props } = renderDrawer();
 
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Font size (% of height)' }), {
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Font size (% of the shorter side)' }), {
       target: { value: '30' }
     });
 

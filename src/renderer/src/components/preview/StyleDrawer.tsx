@@ -209,7 +209,8 @@ export function StyleDrawer({ style, onChange, onApplyPreset, defaultOpen = fals
 /** Mini "Aa" drawn with the preset's real colors, outline, shadow and box. */
 function PresetSample({ preset }: { preset: SubtitleStyle }) {
   // Pick a frame height where the font renders at SAMPLE_FONT_PX; every other length scales with it.
-  const geometry = computeSubtitleGeometry(preset, 100, (SAMPLE_FONT_PX * 100) / preset.fontSizePercent);
+  const sampleFrame = (SAMPLE_FONT_PX * 100) / preset.fontSizePercent;
+  const geometry = computeSubtitleGeometry(preset, sampleFrame, sampleFrame);
 
   return (
     <span

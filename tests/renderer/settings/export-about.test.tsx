@@ -3,7 +3,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FfmpegStatus } from '../../../src/shared/types/media';
 import { SettingsPage } from '../../../src/renderer/src/pages/SettingsPage';
-import { mockSettings } from '../../../src/renderer/src/mocks/settings';
+import { mockSettings } from './mockSettings';
 import { renderWithI18n } from '../renderWithI18n';
 import { fullFfmpegStatus, installFakeApi, removeFakeApi, updateState } from './fixtures';
 

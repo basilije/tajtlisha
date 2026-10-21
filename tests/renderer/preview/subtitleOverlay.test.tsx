@@ -16,14 +16,15 @@ afterEach(() => cleanup());
 const boxedStyle: SubtitleStyle = { ...DEFAULT_SUBTITLE_STYLE, backgroundEnabled: true, outlineEnabled: true };
 
 describe('SubtitleOverlay', () => {
-  it('sizes the font as a percentage of the displayed frame height', () => {
+  it('sizes the font as a percentage of the displayed frame shorter side', () => {
     const { container } = renderWithI18n(
       <SubtitleOverlay text="Hello" style={DEFAULT_SUBTITLE_STYLE} frameWidth={360} frameHeight={640} />
     );
 
     const block = container.querySelector<HTMLElement>('.subtitle-block');
-    expect(block?.style.fontSize).toBe(`${(640 * DEFAULT_SUBTITLE_STYLE.fontSizePercent) / 100}px`);
-    expect(block?.style.fontSize).toBe('28.8px');
+    // Font size follows the shorter side (360 px wide on a 360x640 frame).
+    expect(block?.style.fontSize).toBe(`${(360 * DEFAULT_SUBTITLE_STYLE.fontSizePercent) / 100}px`);
+    expect(block?.style.fontSize).toBe('19.8px');
   });
 
   it('keeps explicit line breaks in the text', () => {
