@@ -24,6 +24,7 @@ or update path.
 | 3 | Renderer project reducer: caption operations, undo/redo, validation, selectors | `feat/renderer-state` | in progress |
 | 4 | Serbian Latin diacritics in all UI strings | `fix/i18n-diacritics` | in progress |
 | 5 | electron-builder packaging, electron-updater, CI and release workflows | `build/packaging-autoupdate` | in progress |
+| 5b | Windows NSIS installer, bundled static ffmpeg/ffprobe for Windows and Linux, CI release matrix (ubuntu + windows) | `build/windows-installer` | todo (after 5) |
 
 ## Wave 2: wiring and UI parts
 
@@ -47,7 +48,12 @@ or update path.
 - `whisper-1` (the only OpenAI model with word timestamps) shuts down 2027-02-26. The speech-detection
   fallback keeps the app working after that; revisit when OpenAI documents timestamps for `gpt-transcribe`.
 
+- Windows installer is unsigned at first: SmartScreen shows a warning until a code-signing certificate is bought.
+- Bundled ffmpeg builds that include libx264 are GPL. Shipping them as separate executables next to the app is
+  normal practice, but the license text and a source link must ship with them.
+
 ## Log
 
 - 2026-10-21: v0.1.0 tagged (baseline skeleton). `develop` created. Wave 0 contracts committed.
 - 2026-10-21: Wave 1 started: five Haiku workers in worktrees under ../Tajtlisha-worktrees/. Sol reviewing contracts.
+- 2026-10-21: Owner asked for Windows and Linux installers. Added task 5b (bundled ffmpeg, NSIS, CI matrix).
