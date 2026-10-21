@@ -72,6 +72,21 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
+  it('asks for the video when the saved file is missing and relinks it without dropping captions', async () => {
+    fake = createWindowApi();
+    fake.loadLast.mockResolvedValueOnce({ project: makeProject(), sourceStatus: 'missing' });
+    installApi(fake);
+    fake.selectVideo.mockResolvedValueOnce({ ...SOURCE, inputPath: '/clips/moved.mp4', fileUrl: 'tajtlisha-media://moved' });
+    render(<App />);
+
+    expect(await screen.findByText('The video file was moved or changed.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Find video' }));
+
+    await waitFor(() => expect(screen.queryByText('The video file was moved or changed.')).toBeNull());
+    expect(screen.getByDisplayValue('Zdravo svima')).toBeInTheDocument();
+    expect(document.querySelector('.topbar-clip')?.textContent).toBe('moved.mp4');
+  });
+
   it('transcribes into empty captions and sends the line limit for the frame', async () => {
     fake = createWindowApi({ project: makeProject({ captions: [] }) });
     installApi(fake);

@@ -501,6 +501,11 @@
   display: none;
 }
 
+/* The preview timecode stays on one line in the narrow preview column. */
+.editor-preview .video-preview-time .mono {
+  white-space: nowrap;
+}
+
 /* Focus targets from the step indicator are containers, not controls. */
 [data-step-target]:focus {
   outline: none;
