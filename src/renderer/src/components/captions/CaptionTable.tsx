@@ -235,7 +235,7 @@ export function CaptionTable({
                     <ul className="caption-line-warnings">
                       {originalLong.map((line) => (
                         <li key={line.line}>
-                          {t('captions.line.tooLong', { line: line.line, length: line.length, max: maxCharsPerLine })}
+                          {t('captions.line.tooLong', { detail: `${line.line}: ${line.length}/${maxCharsPerLine}` })}
                         </li>
                       ))}
                     </ul>
@@ -254,7 +254,7 @@ export function CaptionTable({
                       <ul className="caption-line-warnings">
                         {translationLong.map((line) => (
                           <li key={line.line}>
-                            {t('captions.line.tooLong', { line: line.line, length: line.length, max: maxCharsPerLine })}
+                            {t('captions.line.tooLong', { detail: `${line.line}: ${line.length}/${maxCharsPerLine}` })}
                           </li>
                         ))}
                       </ul>

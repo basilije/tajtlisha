@@ -287,7 +287,7 @@ describe('CaptionTable', () => {
       />
     );
 
-    expect(screen.getByText(`Line 2: ${longLine.length} of 10 characters`)).toBeTruthy();
+    expect(screen.getByText(`Line 2: ${longLine.length}/10 characters`)).toBeTruthy();
     expect(screen.queryByText(/Line 1:/)).toBeNull();
   });
 

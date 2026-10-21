@@ -30,7 +30,7 @@ export const captionsStrings = {
       endLater: 'End 100 ms later'
     },
     line: {
-      tooLong: 'Line {{line}}: {{length}} of {{max}} characters'
+      tooLong: 'Line {{detail}} characters'
     },
     actions: {
       insertAfter: 'Insert caption after',
@@ -209,7 +209,7 @@ export const captionsStrings = {
       endLater: 'Kraj 100 ms kasnije'
     },
     line: {
-      tooLong: 'Red {{line}}: {{length}} od {{max}} znakova'
+      tooLong: 'Red {{detail}} znakova'
     },
     actions: {
       insertAfter: 'Dodaj titl posle',
@@ -388,7 +388,7 @@ export const captionsStrings = {
       endLater: 'Крај 100 мс касније'
     },
     line: {
-      tooLong: 'Ред {{line}}: {{length}} од {{max}} знакова'
+      tooLong: 'Ред {{detail}} знакова'
     },
     actions: {
       insertAfter: 'Додај титл после',
