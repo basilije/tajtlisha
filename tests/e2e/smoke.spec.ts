@@ -7,34 +7,47 @@ import { join } from 'node:path';
 
 type RendererGlobal = typeof globalThis & {
   tajtlisha: {
-    media: {
-      createPreviewProxy(input: { inputPath: string }): Promise<{ fileUrl: string }>;
+    project: {
+      createPreviewProxy(input: { jobId: string; inputPath: string }): Promise<{ fileUrl: string }>;
     };
   };
 };
 
-test('launches Tajtlisha and navigates between Editor and Settings', async () => {
+// The app starts in the system language, so the names are matched in all three UI languages.
+const SETTINGS_NAME = /^(Settings|Podešavanja|Подешавања)$/;
+const OPEN_VIDEO_NAME = /^(Open video|Otvori video|Отвори видео)$/;
+
+test('launches Tajtlisha, shows the empty state and opens Settings as an overlay', async () => {
   const mainEntry = resolve(process.cwd(), 'out/main/index.js');
   test.skip(!existsSync(mainEntry), 'Run pnpm build before pnpm test:e2e.');
 
   const app = await electron.launch({ args: [mainEntry] });
-
-  const window = await app.firstWindow();
-  await expect
-    .poll(() =>
-      window.evaluate(
-        () => typeof (globalThis as { tajtlisha?: { media?: { selectVideo?: unknown } } }).tajtlisha?.media?.selectVideo
+  try {
+    const window = await app.firstWindow();
+    await expect
+      .poll(() =>
+        window.evaluate(
+          () => typeof (globalThis as { tajtlisha?: { project?: { selectVideo?: unknown } } }).tajtlisha?.project?.selectVideo
+        )
       )
-    )
-    .toBe('function');
-  await expect(window.getByRole('heading', { name: 'Editor' })).toBeVisible();
-  expect(
-    await window.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content')
-  ).toContain('tajtlisha-media:');
-  await window.getByRole('button', { name: 'Settings' }).click();
-  await expect(window.getByRole('heading', { name: 'Settings' })).toBeVisible();
+      .toBe('function');
+    expect(
+      await window.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content')
+    ).toContain('tajtlisha-media:');
 
-  await app.close();
+    const emptyCard = window.locator('.empty-card');
+    await expect(emptyCard.getByRole('button', { name: OPEN_VIDEO_NAME })).toBeVisible();
+
+    await window.getByRole('button', { name: SETTINGS_NAME }).click();
+    const settings = window.getByRole('dialog');
+    await expect(settings).toBeVisible();
+
+    await window.keyboard.press('Escape');
+    await expect(settings).toHaveCount(0);
+    await expect(emptyCard).toBeVisible();
+  } finally {
+    await app.close();
+  }
 });
 
 test('plays an ffmpeg preview proxy through the local media protocol', async () => {
@@ -66,7 +79,10 @@ test('plays an ffmpeg preview proxy through the local media protocol', async () 
     const page = await app.firstWindow();
     const preview = await page.evaluate(
       (sourcePath) =>
-        (globalThis as RendererGlobal).tajtlisha.media.createPreviewProxy({ inputPath: sourcePath }),
+        (globalThis as RendererGlobal).tajtlisha.project.createPreviewProxy({
+          jobId: crypto.randomUUID(),
+          inputPath: sourcePath
+        }),
       inputPath
     );
     const playback = await page.evaluate(

@@ -1,415 +1,190 @@
-/**
- * @vitest-environment jsdom
- */
-import '@testing-library/jest-dom/vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../../src/renderer/src/App';
-import { EditorPage } from '../../src/renderer/src/pages/EditorPage';
-import { SettingsPage } from '../../src/renderer/src/pages/SettingsPage';
-import { mockProviderStatuses, mockSettings, mockTracks } from '../../src/renderer/src/mocks/settings';
-import { userFacingErrorMessage } from '../../src/renderer/src/utils/error-message';
-import { renderWithI18n } from './renderWithI18n';
+import { caption, makeProject, SOURCE } from './editor/fixtures';
+import { createWindowApi, type FakeWindowApi } from './editor/fakeWindowApi';
 
-describe('renderer shell', () => {
-  it('removes the Electron IPC wrapper from provider errors', () => {
-    expect(
-      userFacingErrorMessage(
-        new Error("Error invoking remote method 'ai:generateSubtitles': Error: OpenAI rate limit or quota blocked this request."),
-        'fallback'
-      )
-    ).toBe('OpenAI rate limit or quota blocked this request.');
+function installApi(fake: FakeWindowApi): void {
+  window.tajtlisha = fake.api;
+}
+
+/** The AI toolbar. Its buttons share names with the step indicator, so queries stay inside it. */
+async function aiPanel(): Promise<HTMLElement> {
+  return waitFor(() => {
+    const panel = document.querySelector<HTMLElement>('.generate-panel');
+    expect(panel).not.toBeNull();
+    return panel as HTMLElement;
+  });
+}
+
+afterEach(() => {
+  delete (window as { tajtlisha?: unknown }).tajtlisha;
+});
+
+describe('App shell', () => {
+  let fake: FakeWindowApi;
+
+  beforeEach(() => {
+    fake = createWindowApi();
+    installApi(fake);
   });
 
-  it('switches UI language with i18next/react-i18next', async () => {
-    renderWithI18n(<App />);
+  it('loads the last project and shows its captions and clip name', async () => {
+    render(<App />);
+
+    expect(await screen.findByDisplayValue('Zdravo svima')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Danas idemo na more')).toBeInTheDocument();
+    expect(document.querySelector('.topbar-clip')?.textContent).toBe('intro.mp4');
+  });
+
+  it('keeps the project mounted while Settings is open', async () => {
+    render(<App />);
+    await screen.findByDisplayValue('Zdravo svima');
 
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
-    fireEvent.change(screen.getByLabelText('Interface language'), { target: { value: 'sr-Cyrl' } });
+    expect(await screen.findByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
 
-    expect(await screen.findByRole('heading', { name: 'Подешавања' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Едитор' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close settings' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument());
+    expect(screen.getByDisplayValue('Zdravo svima')).toBeInTheDocument();
   });
 
-  it('renders subtitle tracks only when a project supplies them', () => {
-    renderWithI18n(<EditorPage tracks={mockTracks} settings={mockSettings} />);
+  it('shows the empty state with Open video and the FFmpeg status when no clip is open', async () => {
+    fake = createWindowApi({ project: null });
+    installApi(fake);
+    render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'Editor' })).toBeInTheDocument();
-    expect(screen.getAllByText('Original subtitles').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Translated subtitles').length).toBeGreaterThan(0);
-    expect(screen.getByText('This launch build needs clear subtitles.')).toBeInTheDocument();
-  });
-
-  it('keeps export disabled until a video is ready and imports from the preview', async () => {
-    const selectVideo = vi.fn().mockResolvedValue({
-      inputPath: '/clips/source.mp4',
-      fileUrl: 'file:///clips/source.mp4',
-      durationMs: 5000,
-      hasVideo: true,
-      hasAudio: true
-    });
-    window.tajtlisha = {
-      media: { selectVideo }
-    } as unknown as typeof window.tajtlisha;
-
-    renderWithI18n(<EditorPage settings={mockSettings} />);
-
-    expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
-
-    fireEvent.click(screen.getByRole('button', { name: /No video selected/i }));
-
-    await waitFor(() => expect(selectVideo).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
-    expect(screen.getByRole('spinbutton', { name: 'Trim end' })).toHaveValue(5);
-    expect(screen.getByRole('slider', { name: 'Trim start' })).toHaveAttribute('aria-valuenow', '0');
-    expect(screen.getByRole('slider', { name: 'Trim end' })).toHaveAttribute('aria-valuenow', '5000');
-  });
-
-  it('adjusts the trim range from timeline handles', async () => {
-    const selectVideo = vi.fn().mockResolvedValue({
-      inputPath: '/clips/source.mp4',
-      fileUrl: 'file:///clips/source.mp4',
-      durationMs: 5000,
-      hasVideo: true,
-      hasAudio: true
-    });
-    window.tajtlisha = {
-      media: { selectVideo }
-    } as unknown as typeof window.tajtlisha;
-
-    renderWithI18n(<EditorPage settings={mockSettings} />);
-    fireEvent.click(screen.getByRole('button', { name: /No video selected/i }));
-    const trimEndHandle = await screen.findByRole('slider', { name: 'Trim end' });
-
-    trimEndHandle.focus();
-    fireEvent.keyDown(trimEndHandle, { key: 'ArrowLeft' });
-
-    expect(screen.getByRole('spinbutton', { name: 'Trim end' })).toHaveValue(4.9);
-  });
-
-  it('keeps video playback within the trim range', async () => {
-    const selectVideo = vi.fn().mockResolvedValue({
-      inputPath: '/clips/source.mp4',
-      fileUrl: 'file:///clips/source.mp4',
-      durationMs: 5000,
-      hasVideo: true,
-      hasAudio: true
-    });
-    window.tajtlisha = {
-      media: { selectVideo }
-    } as unknown as typeof window.tajtlisha;
-
-    const { container } = renderWithI18n(<EditorPage settings={mockSettings} />);
-    fireEvent.click(screen.getByRole('button', { name: /No video selected/i }));
-    await screen.findByRole('spinbutton', { name: 'Trim end' });
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Trim start' }), { target: { value: '1' } });
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Trim end' }), { target: { value: '4' } });
-
-    const video = container.querySelector('video');
-    expect(video).not.toBeNull();
-    Object.defineProperty(video, 'pause', { configurable: true, value: vi.fn() });
-    video!.currentTime = 0;
-    fireEvent.play(video!);
-    expect(video!.currentTime).toBe(1);
-
-    video!.currentTime = 4.1;
-    fireEvent.timeUpdate(video!);
-    expect(video!.pause).toHaveBeenCalledTimes(1);
-    expect(video!.currentTime).toBe(4);
-  });
-
-  it('lets the user correct subtitle text and timing locally', () => {
-    renderWithI18n(<EditorPage tracks={mockTracks} settings={mockSettings} />);
-
-    const textArea = screen.getByLabelText('Original subtitles seg-1');
-    fireEvent.change(textArea, { target: { value: 'Corrected subtitle text.' } });
-
-    expect(screen.getByDisplayValue('Corrected subtitle text.')).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText('Start seg-1'), { target: { value: '1.5' } });
-    fireEvent.change(screen.getByLabelText('End seg-1'), { target: { value: '3.8' } });
-
-    expect(screen.getAllByText('0:01 - 0:03').length).toBeGreaterThan(0);
-  });
-
-  it('exports the edited tracks and trim range through the preload API', async () => {
-    const selectVideo = vi.fn().mockResolvedValue({
-      inputPath: '/clips/source.mp4',
-      fileUrl: 'file:///clips/source.mp4',
-      durationMs: 5000,
-      hasVideo: true,
-      hasAudio: true
-    });
-    const selectOutputFolder = vi.fn().mockResolvedValue({ outputFolder: '/exports' });
-    const generateSubtitles = vi.fn().mockResolvedValue({ originalTrack: mockTracks[0], translatedTrack: mockTracks[1] });
-    const exportProject = vi.fn().mockResolvedValue({
-      originalSrtPath: '/exports/source.original.srt',
-      translatedSrtPath: '/exports/source.translation.srt',
-      burnedInVideoPath: '/exports/source.translation.burned.mp4'
-    });
-    window.tajtlisha = {
-      media: { selectVideo },
-      export: { selectOutputFolder, exportProject },
-      ai: { generateSubtitles }
-    } as unknown as typeof window.tajtlisha;
-
-    renderWithI18n(
-      <EditorPage
-        settings={{ ...mockSettings, defaultOutputFolder: undefined }}
-        providers={mockProviderStatuses}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /No video selected/i }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Generate subtitles' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: 'Generate subtitles' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Export' })).toBeEnabled());
-
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Trim start' }), { target: { value: '1' } });
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Trim end' }), { target: { value: '4' } });
-    fireEvent.change(screen.getByLabelText('Translated subtitles seg-1-tr'), { target: { value: 'Izmenjen prevod.' } });
-    fireEvent.change(screen.getByLabelText('Font size'), { target: { value: '56' } });
-    fireEvent.change(screen.getByLabelText('Text color'), { target: { value: '#ffcc00' } });
-    fireEvent.change(screen.getByLabelText('Position'), { target: { value: 'top' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
-
-    await waitFor(() => expect(exportProject).toHaveBeenCalledTimes(1));
-    expect(exportProject).toHaveBeenCalledWith(
-      expect.objectContaining({
-        inputPath: '/clips/source.mp4',
-        outputFolder: '/exports',
-        trim: { startMs: 1000, endMs: 4000, knownDurationMs: 5000 },
-        burnedInTrack: 'translation',
-        exportOriginalSrt: true,
-        exportTranslatedSrt: true
-      })
-    );
-    expect(exportProject.mock.calls[0][0].style).toEqual(expect.objectContaining({ fontSizePx: 56, textColor: '#ffcc00', position: 'top' }));
-    expect(JSON.stringify(exportProject.mock.calls[0][0].tracks)).toContain('Izmenjen prevod.');
-    expect(screen.getByText('Export completed: 3 files.')).toBeInTheDocument();
-  });
-
-  it('generates subtitle tracks from the active AI provider', async () => {
-    const selectVideo = vi.fn().mockResolvedValue({
-      inputPath: '/clips/source.mp4',
-      fileUrl: 'file:///clips/source.mp4',
-      durationMs: 5000,
-      hasVideo: true,
-      hasAudio: true
-    });
-    const generateSubtitles = vi.fn().mockResolvedValue({
-      originalTrack: {
-        id: 'original-en',
-        kind: 'original',
-        language: 'en',
-        segments: [{ id: 'generated-1', startMs: 0, endMs: 1000, text: 'Generated original.', language: 'en' }]
-      },
-      translatedTrack: {
-        id: 'translation-sr',
-        kind: 'translation',
-        language: 'sr-Latn',
-        sourceLanguage: 'en',
-        targetLanguage: 'sr-Latn',
-        segments: [{ id: 'generated-1-tr', startMs: 0, endMs: 1000, text: 'Generisan prevod.', language: 'sr-Latn' }]
-      }
-    });
-    window.tajtlisha = {
-      media: { selectVideo },
-      ai: { generateSubtitles }
-    } as unknown as typeof window.tajtlisha;
-
-    renderWithI18n(
-      <EditorPage
-        settings={{
-          ...mockSettings,
-          aiConnector: {
-            ...mockSettings.aiConnector,
-            activeProviderId: 'openai',
-            defaultTargetLanguage: 'sr-Latn'
-          }
-        }}
-        providers={mockProviderStatuses}
-      />
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /No video selected/i }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Generate subtitles' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: 'Generate subtitles' }));
-
-    await waitFor(() => expect(generateSubtitles).toHaveBeenCalledTimes(1));
-    expect(generateSubtitles).toHaveBeenCalledWith(
-      expect.objectContaining({
-        inputPath: '/clips/source.mp4',
-        providerId: 'openai',
-        targetLanguage: 'sr-Latn',
-        autoDetectLanguage: true
-      })
-    );
-    expect(await screen.findByDisplayValue('Generated original.')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Generisan prevod.')).toBeInTheDocument();
-  });
-
-  it('keeps subtitle generation disabled until a connected provider is available', async () => {
-    const selectVideo = vi.fn().mockResolvedValue({
-      inputPath: '/clips/source.mp4',
-      fileUrl: 'file:///clips/source.mp4',
-      durationMs: 5000,
-      hasVideo: true,
-      hasAudio: true
-    });
-    window.tajtlisha = { media: { selectVideo } } as unknown as typeof window.tajtlisha;
-
-    renderWithI18n(<EditorPage settings={mockSettings} providers={[]} />);
-
-    fireEvent.click(screen.getByRole('button', { name: /No video selected/i }));
-    await waitFor(() => expect(selectVideo).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('button', { name: 'Generate subtitles' })).toBeDisabled();
-  });
-
-  it('shows an import error when the desktop preload API is unavailable', async () => {
-    window.tajtlisha = undefined as unknown as typeof window.tajtlisha;
-
-    renderWithI18n(<EditorPage settings={mockSettings} />);
-
-    fireEvent.click(screen.getByRole('button', { name: /No video selected/i }));
-
-    expect(await screen.findByText('Video import failed.')).toBeInTheDocument();
-  });
-
-  it('creates a compatible preview when Chromium rejects the imported codec', async () => {
-    const selectVideo = vi.fn().mockResolvedValue({
-      inputPath: '/clips/source.mp4',
-      fileUrl: 'tajtlisha-media://video/original',
-      durationMs: 5000,
-      hasVideo: true,
-      hasAudio: true
-    });
-    const createPreviewProxy = vi.fn().mockResolvedValue({
-      fileUrl: 'tajtlisha-media://video/proxy'
-    });
-    window.tajtlisha = {
-      media: { selectVideo, createPreviewProxy }
-    } as unknown as typeof window.tajtlisha;
-
-    const { container } = renderWithI18n(<EditorPage settings={mockSettings} />);
-    fireEvent.click(screen.getByRole('button', { name: /No video selected/i }));
-
-    const video = await waitFor(() => {
-      const element = container.querySelector('video');
+    const card = await waitFor(() => {
+      const element = document.querySelector<HTMLElement>('.empty-card');
       expect(element).not.toBeNull();
-      return element as HTMLVideoElement;
+      return element as HTMLElement;
     });
-    Object.defineProperty(video, 'error', { configurable: true, value: { code: 4 } });
-    fireEvent.error(video);
-
-    await waitFor(() => expect(createPreviewProxy).toHaveBeenCalledWith({ inputPath: '/clips/source.mp4' }));
-    await waitFor(() => expect(container.querySelector('video')).toHaveAttribute('src', 'tajtlisha-media://video/proxy'));
+    expect(within(card).getByRole('button', { name: 'Open video' })).toBeInTheDocument();
+    expect(within(card).getByText('FFmpeg is ready')).toBeInTheDocument();
   });
 
-  it('renders all required settings sections', () => {
-    renderWithI18n(
-      <SettingsPage
-        settings={mockSettings}
-        providers={mockProviderStatuses}
-        onLanguageChange={() => undefined}
-      />
-    );
+  it('shows a blocking error with retry when settings cannot load', async () => {
+    fake.api.settings.get = () => Promise.reject(new Error('settings file is locked'));
+    render(<App />);
 
-    expect(screen.getByRole('heading', { name: 'General' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Language & localization' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'AI connector' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Export defaults' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Advanced/diagnostics' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Settings could not be loaded' })).toBeInTheDocument();
+    expect(screen.getByText('settings file is locked')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
-  it('shows the AI connector shell without raw secrets', () => {
-    renderWithI18n(
-      <SettingsPage
-        settings={mockSettings}
-        providers={mockProviderStatuses}
-        onLanguageChange={() => undefined}
-      />
-    );
+  it('transcribes into empty captions and sends the line limit for the frame', async () => {
+    fake = createWindowApi({ project: makeProject({ captions: [] }) });
+    installApi(fake);
+    fake.transcribe.mockResolvedValueOnce({
+      language: 'sr-Latn',
+      captions: [caption('t1', 0, 2000, 'Novi titl')],
+      timingSource: 'word'
+    });
+    render(<App />);
 
-    expect(screen.getByText('OpenAI')).toBeInTheDocument();
-    expect(screen.getByText('API key ending in 1234')).toBeInTheDocument();
-    expect(screen.queryByText(/sk-[A-Za-z0-9]/)).not.toBeInTheDocument();
+    fireEvent.click(within(await aiPanel()).getByRole('button', { name: 'Transcribe' }));
+
+    expect(await screen.findByDisplayValue('Novi titl')).toBeInTheDocument();
+    expect(fake.transcribe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputPath: SOURCE.inputPath,
+        trim: { startMs: 0, endMs: 12000 },
+        providerId: 'openai',
+        modelId: 'whisper-1',
+        language: 'sr-Latn',
+        maxCharsPerLine: expect.any(Number),
+        maxLinesPerCaption: 2
+      })
+    );
   });
 
-  it('shows a model loading error instead of an empty unexplained picker', async () => {
-    renderWithI18n(
-      <SettingsPage
-        settings={mockSettings}
-        providers={mockProviderStatuses}
-        onLanguageChange={() => undefined}
-        onListModels={async () => {
-          throw new Error('provider unavailable');
-        }}
-      />
+  it('ignores a transcription that finished after the video was replaced', async () => {
+    fake = createWindowApi({ project: makeProject({ captions: [] }) });
+    installApi(fake);
+    let finish: (value: unknown) => void = () => undefined;
+    fake.transcribe.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
     );
+    fake.selectVideo.mockResolvedValueOnce({ ...SOURCE, inputPath: '/clips/other.mp4', fileUrl: 'tajtlisha-media://other' });
+    render(<App />);
 
-    const errorOptions = await screen.findAllByRole('option', { name: 'Models unavailable' });
-    expect(errorOptions).toHaveLength(2);
+    fireEvent.click(within(await aiPanel()).getByRole('button', { name: 'Transcribe' }));
+    await waitFor(() => expect(fake.transcribe).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open video' }));
+    await waitFor(() => expect(fake.selectVideo).toHaveBeenCalled());
+
+    finish({ language: 'sr-Latn', captions: [caption('t1', 0, 2000, 'Stari titl')], timingSource: 'word' });
+
+    expect(
+      await screen.findByText('The project or video changed while the job ran. The result was not applied.')
+    ).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Stari titl')).toBeNull();
   });
 
-  it('persists editable general, AI, and export defaults through the settings callback', async () => {
-    const onSettingsChange = vi.fn();
-    renderWithI18n(
-      <SettingsPage
-        settings={mockSettings}
-        onLanguageChange={() => undefined}
-        onSettingsChange={onSettingsChange}
-        onListModels={async (_providerId, capability) =>
-          capability === 'translation' ? [{ id: 'gpt-4.1', label: 'GPT-4.1', capability }] : []
-        }
-      />
+  it('shows the AppError message for a failed job and keeps the detail expandable', async () => {
+    fake.transcribe.mockRejectedValueOnce(
+      new Error("Error invoking remote method 'workflow:transcribe': Error: [PROVIDER_AUTH_FAILED] Invalid key")
     );
+    render(<App />);
+    await screen.findByDisplayValue('Zdravo svima');
 
-    fireEvent.change(screen.getByLabelText('Default output folder'), { target: { value: '/exports' } });
-    expect(onSettingsChange).toHaveBeenLastCalledWith({ defaultOutputFolder: '/exports' });
+    fireEvent.click(within(await aiPanel()).getByRole('button', { name: 'Transcribe again' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Transcribe' }));
 
-    fireEvent.click(screen.getByLabelText('Autosave projects'));
-    expect(onSettingsChange).toHaveBeenLastCalledWith({ autosaveEnabled: false });
-
-    fireEvent.change(screen.getByLabelText('Default target language'), { target: { value: 'de' } });
-    expect(onSettingsChange).toHaveBeenLastCalledWith({
-      aiConnector: expect.objectContaining({ defaultTargetLanguage: 'de' })
-    });
-
-    await screen.findByRole('option', { name: 'GPT-4.1' });
-    fireEvent.change(screen.getByLabelText('Text model'), { target: { value: 'gpt-4.1' } });
-    expect(onSettingsChange).toHaveBeenLastCalledWith({
-      aiConnector: expect.objectContaining({ textModelByProvider: expect.objectContaining({ openai: 'gpt-4.1' }) })
-    });
-
-    fireEvent.change(screen.getByLabelText('Burned-in subtitle track'), { target: { value: 'original' } });
-    expect(onSettingsChange).toHaveBeenLastCalledWith({
-      exportDefaults: expect.objectContaining({ defaultBurnedInTrack: 'original' })
-    });
-
-    fireEvent.change(screen.getByLabelText('Overwrite policy'), { target: { value: 'create_copy' } });
-    expect(onSettingsChange).toHaveBeenLastCalledWith({
-      exportDefaults: expect.objectContaining({ overwritePolicy: 'create_copy' })
-    });
+    expect(
+      await screen.findByText('The AI provider rejected the API key. Check it in Settings.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('Details')).toBeInTheDocument();
+    expect(screen.getByText('Invalid key')).toBeInTheDocument();
   });
 
-  it('connects an AI provider from settings without rendering the raw secret', async () => {
-    const onConnectProvider = vi.fn().mockResolvedValue(undefined);
-    renderWithI18n(
-      <SettingsPage
-        settings={mockSettings}
-        providers={[{ ...mockProviderStatuses[0], connected: false, maskedCredential: undefined }]}
-        onLanguageChange={() => undefined}
-        onConnectProvider={onConnectProvider}
-      />
+  it('exports with the trim, languages and outputs from the project and shows the created files', async () => {
+    render(<App />);
+    await screen.findByDisplayValue('Zdravo svima');
+
+    fireEvent.click(screen.getByTitle('Export (Ctrl+E)'));
+    const dialog = await screen.findByRole('dialog', { name: 'Export subtitles' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Export' }));
+
+    await waitFor(() =>
+      expect(fake.exportProject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inputPath: SOURCE.inputPath,
+          outputFolder: '/exports',
+          baseName: 'intro',
+          videoWidth: 720,
+          videoHeight: 1280,
+          trim: { startMs: 0, endMs: 12000 },
+          sourceLanguage: 'sr-Latn',
+          targetLanguage: 'en',
+          outputs: { originalSrt: true, translationSrt: true, video: 'translation' },
+          overwritePolicy: 'ask',
+          jobId: expect.any(String)
+        })
+      )
     );
+    const created = await within(dialog).findByRole('region', { name: 'Created files' });
+    expect(within(created).getByText('intro.sr-Latn.srt')).toBeInTheDocument();
+    expect(within(created).getByText('intro.en.srt')).toBeInTheDocument();
+  });
 
-    fireEvent.change(screen.getByLabelText('Authentication mode'), { target: { value: 'api_key' } });
-    fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'sk-test-secret-1234' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+  it('undoes with Ctrl+Z outside text fields but not inside a textarea', async () => {
+    render(<App />);
+    await screen.findByDisplayValue('Zdravo svima');
 
-    await waitFor(() => expect(onConnectProvider).toHaveBeenCalledWith('openai', 'api_key', 'sk-test-secret-1234'));
-    expect(screen.queryByText('sk-test-secret-1234')).not.toBeInTheDocument();
-    expect(screen.getByText('Provider connected.')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete caption' })[0]);
+    await waitFor(() => expect(screen.queryByDisplayValue('Zdravo svima')).toBeNull());
+
+    fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true });
+    expect(await screen.findByDisplayValue('Zdravo svima')).toBeInTheDocument();
+
+    // Inside a text field the native undo keeps working, so the project must not undo again.
+    fireEvent.keyDown(screen.getByDisplayValue('Danas idemo na more'), { key: 'z', ctrlKey: true });
+    expect(screen.getByDisplayValue('Zdravo svima')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Danas idemo na more')).toBeInTheDocument();
   });
 });
