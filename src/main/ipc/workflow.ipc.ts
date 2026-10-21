@@ -2,6 +2,7 @@ import type { PolishMode, TranscribeClipRequest, TranslateCaptionsRequest } from
 import { IPC_CHANNELS } from '../../shared/types/ipc';
 import type { SubtitleWorkflowService } from '../ai';
 import { type JobRegistry, runJob } from '../jobs/job-registry';
+import { requireKnownSource, type KnownSources } from '../project/known-sources';
 import {
   requireArray,
   requireFiniteNumber,
@@ -19,11 +20,13 @@ export type WorkflowIpcDeps = {
   ipc: IpcRegistrar;
   jobs: JobRegistry;
   workflow: Pick<SubtitleWorkflowService, 'transcribe' | 'translate'>;
+  sources: Pick<KnownSources, 'has'>;
 };
 
-export function registerWorkflowIpc({ ipc, jobs, workflow }: WorkflowIpcDeps): void {
+export function registerWorkflowIpc({ ipc, jobs, workflow, sources }: WorkflowIpcDeps): void {
   ipc.handle(IPC_CHANNELS.workflowTranscribe, (event, payload: unknown) => {
     const request = toTranscribeRequest(payload);
+    requireKnownSource(sources, request.inputPath);
     return runJob(jobs, event.sender, request.jobId, (context) => workflow.transcribe(request, context));
   });
 

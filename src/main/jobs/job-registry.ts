@@ -112,6 +112,27 @@ export class JobRegistry {
     }
   }
 
+  /**
+   * Aborts the jobs of one window (or of every window when no owner is given)
+   * and resolves once all of them have finished. Used on quit, where the
+   * process must not exit while ffmpeg or an AI request is still running.
+   */
+  async cancelAllAndWait(ownerId?: number): Promise<void> {
+    const entries = [...this.jobsByOwner.entries()]
+      .filter(([id]) => ownerId === undefined || id === ownerId)
+      .flatMap(([, jobs]) => [...jobs.values()]);
+    for (const entry of entries) {
+      entry.controller.abort();
+    }
+    await Promise.all(entries.map((entry) => entry.finished));
+  }
+
+  /** True while the window (or any window, when no owner is given) has a running job. */
+  hasJobs(ownerId?: number): boolean {
+    if (ownerId !== undefined) return (this.jobsByOwner.get(ownerId)?.size ?? 0) > 0;
+    return this.jobsByOwner.size > 0;
+  }
+
   private send(jobId: string, entry: JobEntry, stage: JobStage, progress: number | undefined): void {
     const now = this.now();
     const sameStage = stage === entry.lastStage;

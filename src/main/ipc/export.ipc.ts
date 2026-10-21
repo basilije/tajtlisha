@@ -7,6 +7,7 @@ import type { ProjectExportRequest, ProjectExportResult } from '../../shared/typ
 import type { ProjectExportService } from '../export';
 import { type JobRegistry, runJob } from '../jobs/job-registry';
 import type { MainStrings } from '../i18n';
+import { requireKnownSource, type KnownSources } from '../project/known-sources';
 import {
   requireArray,
   requireJobId,
@@ -24,12 +25,22 @@ export type ExportIpcDeps = {
   shell: DesktopShell;
   /** Strings follow the UI language in settings, resolved at call time. */
   strings: () => Promise<MainStrings>;
+  sources: Pick<KnownSources, 'has'>;
   pathExists?: (path: string) => Promise<boolean>;
 };
 
 const OVERWRITE_POLICIES: readonly ExportOverwritePolicy[] = ['ask', 'overwrite', 'create_copy'];
 
-export function registerExportIpc({ ipc, jobs, exporter, dialogs, shell, strings, pathExists = defaultPathExists }: ExportIpcDeps): void {
+export function registerExportIpc({
+  ipc,
+  jobs,
+  exporter,
+  dialogs,
+  shell,
+  strings,
+  sources,
+  pathExists = defaultPathExists
+}: ExportIpcDeps): void {
   ipc.handle(IPC_CHANNELS.exportSelectOutputFolder, async () => {
     const s = await strings();
     const result = await dialogs.showOpenDialog({
@@ -42,6 +53,7 @@ export function registerExportIpc({ ipc, jobs, exporter, dialogs, shell, strings
 
   ipc.handle(IPC_CHANNELS.exportProject, (event, payload: unknown) => {
     const request = toExportRequest(payload);
+    requireKnownSource(sources, request.inputPath);
     return runJob(jobs, event.sender, request.jobId, async (context) => {
       const exportWith = (overwritePolicy: ExportOverwritePolicy): Promise<ProjectExportResult> =>
         exporter.exportProject({ ...request, overwritePolicy }, context);

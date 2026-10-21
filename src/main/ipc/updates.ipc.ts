@@ -1,9 +1,10 @@
-import { BrowserWindow, ipcMain, type IpcMain } from 'electron';
+import { BrowserWindow } from 'electron';
 import { IPC_CHANNELS } from '../../shared/types/ipc';
 import type { UpdateState } from '../../shared/types/updates';
 import type { UpdateService } from '../updater/update-service';
+import type { IpcRegistrar } from './types';
 
-export function registerUpdatesIpc(service: UpdateService, ipc = ipcMain as IpcMain): void {
+export function registerUpdatesIpc(service: UpdateService, ipc: IpcRegistrar): void {
   ipc.handle(IPC_CHANNELS.updatesGetState, () => service.getState());
   ipc.handle(IPC_CHANNELS.updatesCheck, () => service.check());
   ipc.handle(IPC_CHANNELS.updatesDownload, () => service.download());

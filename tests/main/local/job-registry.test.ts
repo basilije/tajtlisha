@@ -228,3 +228,56 @@ describe('runJob', () => {
     }
   });
 });
+
+describe('JobRegistry shutdown', () => {
+  it('cancelAllAndWait aborts every job and resolves only after each one finished', async () => {
+    const registry = new JobRegistry();
+    const first = registry.start('job-1', fakeOwner(1));
+    const second = registry.start('job-2', fakeOwner(2));
+    let resolved = false;
+
+    const drained = registry.cancelAllAndWait().then(() => {
+      resolved = true;
+    });
+    await settle();
+    expect(first.signal.aborted).toBe(true);
+    expect(second.signal.aborted).toBe(true);
+    expect(resolved).toBe(false);
+
+    first.finish();
+    await settle();
+    expect(resolved).toBe(false);
+    second.finish();
+    await drained;
+    expect(registry.hasJobs()).toBe(false);
+  });
+
+  it('cancelAllAndWait for one owner leaves the other windows jobs running', async () => {
+    const registry = new JobRegistry();
+    const mine = registry.start('job-1', fakeOwner(1));
+    const theirs = registry.start('job-1', fakeOwner(2));
+
+    const drained = registry.cancelAllAndWait(1);
+    await settle();
+    expect(mine.signal.aborted).toBe(true);
+    expect(theirs.signal.aborted).toBe(false);
+    expect(registry.hasJobs(2)).toBe(true);
+    mine.finish();
+    await drained;
+
+    theirs.finish();
+  });
+
+  it('hasJobs reports whether a window has work in flight', () => {
+    const registry = new JobRegistry();
+    expect(registry.hasJobs(1)).toBe(false);
+
+    const job = registry.start('job-1', fakeOwner(1));
+    expect(registry.hasJobs(1)).toBe(true);
+    expect(registry.hasJobs()).toBe(true);
+
+    job.finish();
+    expect(registry.hasJobs(1)).toBe(false);
+    expect(registry.hasJobs()).toBe(false);
+  });
+});
