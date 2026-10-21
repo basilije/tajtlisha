@@ -8,8 +8,11 @@ import { DEFAULT_SUBTITLE_STYLE } from '../../../src/shared/subtitle-geometry';
 import type { ProjectExportRequest } from '../../../src/shared/types/jobs';
 import type { CaptionRow } from '../../../src/shared/types/project';
 import type { FfmpegRunOptions } from '../../../src/main/ffmpeg/ffmpeg-service';
+import { MediaService } from '../../../src/main/media';
+import type { FfmpegService } from '../../../src/main/ffmpeg/ffmpeg-service';
 import { ProjectExportService, buildCopyFilename, escapeFilterValue, formatSrtTimestamp, serializeSrt, validateSubtitleTiming } from '../../../src/main/export';
 import type { SubtitleTrack } from '../../../src/shared/types/subtitles';
+import type { MediaProbeRequest, MediaProbeResult } from '../../../src/shared/types/media';
 
 type FakeRun = (args: string[], options: FfmpegRunOptions) => Promise<{ stdout: string; stderr: string }>;
 
@@ -30,6 +33,16 @@ function fakeFfmpeg(scenario: FakeRun = writeOutput) {
   return { service, calls };
 }
 
+/** The fake source is not a video, so the probe is faked: a 720x1280 display size unless a test overrides it. */
+function fakeProbe(size: { width: number; height: number } = { width: 720, height: 1280 }) {
+  const calls: MediaProbeRequest[] = [];
+  const probe = async (input: MediaProbeRequest): Promise<MediaProbeResult> => {
+    calls.push(input);
+    return { inputPath: input.inputPath, hasVideo: true, hasAudio: true, durationMs: 4000, ...size };
+  };
+  return { probe, calls };
+}
+
 async function writeOutput(args: string[]): Promise<{ stdout: string; stderr: string }> {
   await writeFile(args[args.length - 1], 'fake mp4', 'utf8');
   return { stdout: '', stderr: '' };
@@ -37,7 +50,7 @@ async function writeOutput(args: string[]): Promise<{ stdout: string; stderr: st
 
 function assPathFrom(args: string[]): string | undefined {
   const filter = args[args.indexOf('-vf') + 1] ?? '';
-  const match = /^ass=filename=(.+?):fontsdir=/.exec(filter);
+  const match = /,ass=filename=(.+?):fontsdir=/.exec(filter);
   return match ? match[1].replace(/\\\\\\(.)/g, '$1') : undefined;
 }
 
@@ -90,7 +103,7 @@ describe('project export validation', () => {
     const { service, calls } = fakeFfmpeg();
 
     try {
-      await expectAppError(new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts' }).exportProject(request), 'NOTHING_TO_EXPORT');
+      await expectAppError(new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request), 'NOTHING_TO_EXPORT');
       expect(await readdir(folder)).toEqual(['source.mp4']);
       expect(calls).toHaveLength(0);
     } finally {
@@ -100,7 +113,7 @@ describe('project export validation', () => {
 
   it('rejects invalid trim ranges', async () => {
     const { folder, request } = await setup();
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       await expectAppError(service.exportProject({ ...request, trim: { startMs: 2000, endMs: 2000 } }), 'INVALID_TRIM');
@@ -113,7 +126,7 @@ describe('project export validation', () => {
 
   it('rejects base names with separators or dot segments, and missing folders', async () => {
     const { folder, request } = await setup();
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       for (const baseName of ['', '   ', 'a/b', 'a\\b', '.', '..']) {
@@ -128,7 +141,7 @@ describe('project export validation', () => {
 
   it('rejects a missing source file', async () => {
     const { folder, request } = await setup({ inputPath: join(tmpdir(), 'tajtlisha-no-such-file.mp4') });
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       await expectAppError(service.exportProject(request), 'SOURCE_MISSING');
@@ -144,7 +157,7 @@ describe('project export validation', () => {
         { id: 'b', startMs: 1500, endMs: 2500, original: 'B', translation: 'B' }
       ]
     });
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       const error = await expectAppError(service.exportProject(request), 'INVALID_TIMING');
@@ -162,7 +175,7 @@ describe('project export validation', () => {
         { id: 'c', startMs: 2600, endMs: 2800, original: '', translation: '' }
       ]
     });
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       const error = await expectAppError(service.exportProject(request), 'TRANSLATION_INCOMPLETE');
@@ -177,7 +190,7 @@ describe('project export validation', () => {
 describe('project export outputs', () => {
   it('shifts and clips captions to the trim range and writes SRT files from 00:00:00', async () => {
     const { folder, request } = await setup();
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       const result = await service.exportProject(request);
@@ -212,7 +225,7 @@ describe('project export outputs', () => {
       ],
       outputs: { originalSrt: true, translationSrt: false, video: 'none' }
     });
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       await service.exportProject(request);
@@ -228,7 +241,7 @@ describe('project export outputs', () => {
       captions: [{ id: 'a', startMs: 1200, endMs: 2000, original: 'Prvi red\nDrugi red', translation: 'x' }],
       outputs: { originalSrt: true, translationSrt: false, video: 'none' }
     });
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       await service.exportProject(request);
@@ -243,7 +256,7 @@ describe('project export outputs', () => {
     const { service, calls } = fakeFfmpeg();
 
     try {
-      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts' }).exportProject(request);
+      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request);
       expect(calls).toHaveLength(0);
     } finally {
       await rm(folder, { recursive: true, force: true });
@@ -255,14 +268,14 @@ describe('project export outputs', () => {
     const { service, calls } = fakeFfmpeg();
 
     try {
-      const result = await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts' }).exportProject(request);
+      const result = await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request);
       const args = calls[0].args;
 
       expect(result.files).toEqual([{ kind: 'video', path: join(folder, 'clip.subtitled.mp4') }]);
       expect(args.slice(0, 8)).toEqual(['-y', '-ss', '1.000', '-i', join(folder, 'source.mp4'), '-t', '2.000', '-map']);
       expect(args).toEqual(expect.arrayContaining(['-f', 'mp4', '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac']));
       expect(args[args.length - 1]).toBe(join(folder, '.clip.subtitled.mp4.tajtlisha-tmp'));
-      expect(args[args.indexOf('-vf') + 1]).toMatch(/^ass=filename=.+:fontsdir=\/fonts$/);
+      expect(args[args.indexOf('-vf') + 1]).toMatch(/^scale=720:1280,setsar=1,ass=filename=.+:fontsdir=\/fonts$/);
       expect(calls[0].assDocument).toContain('PlayResX: 720');
       expect(calls[0].assDocument).toContain('Dialogue: 0,0:00:00.00,0:00:01.20,Default,,0,0,0,,Seca pocetak');
       expect(calls[0].assDocument).toContain('Dialogue: 0,0:00:01.50,0:00:02.00,Default,,0,0,0,,Prelazi kraj');
@@ -281,7 +294,7 @@ describe('project export outputs', () => {
     });
 
     try {
-      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts' }).exportProject(request);
+      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request);
       expect(assPath).not.toBe('');
       await expect(access(assPath)).rejects.toThrow();
     } finally {
@@ -301,7 +314,7 @@ describe('project export outputs', () => {
     });
 
     try {
-      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts' }).exportProject(
+      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(
         { ...request, outputs: { originalSrt: true, translationSrt: false, video: 'original' } },
         { onProgress: (event) => events.push(event) }
       );
@@ -325,7 +338,7 @@ describe('project export file policy', () => {
     const { folder, request } = await setup({ baseName: 'source' });
     const inputPath = join(folder, 'source.en.srt');
     await writeFile(inputPath, 'source');
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       await expectAppError(service.exportProject({ ...request, inputPath }), 'OUTPUT_IS_SOURCE');
@@ -341,7 +354,7 @@ describe('project export file policy', () => {
 
     try {
       const error = await expectAppError(
-        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts' }).exportProject({
+        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject({
           ...request,
           outputs: { originalSrt: true, translationSrt: true, video: 'original' }
         }),
@@ -361,7 +374,7 @@ describe('project export file policy', () => {
       {},
       { 'clip.en.srt': 'old', 'clip.en (2).srt': 'older', 'clip.subtitled.mp4': 'old video' }
     );
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       const result = await service.exportProject({
@@ -384,7 +397,7 @@ describe('project export file policy', () => {
 
   it('overwrite replaces existing outputs', async () => {
     const { folder, request } = await setup({ overwritePolicy: 'overwrite' }, { 'clip.en.srt': 'old' });
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       await service.exportProject({ ...request, outputs: { originalSrt: true, translationSrt: false, video: 'none' } });
@@ -396,7 +409,7 @@ describe('project export file policy', () => {
 
   it('refuses two outputs with the same name when source and target language match', async () => {
     const { folder, request } = await setup({ targetLanguage: 'en' });
-    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
 
     try {
       await expectAppError(service.exportProject(request), 'OUTPUT_FOLDER_INVALID');
@@ -415,7 +428,7 @@ describe('project export file policy', () => {
 
     try {
       await expectAppError(
-        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts' }).exportProject({
+        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject({
           ...request,
           outputs: { originalSrt: true, translationSrt: true, video: 'original' }
         }),
@@ -438,7 +451,7 @@ describe('project export file policy', () => {
 
     try {
       await expectAppError(
-        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts' }).exportProject(request, { signal: controller.signal }),
+        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request, { signal: controller.signal }),
         'JOB_CANCELED'
       );
       expect(await readdir(folder)).toEqual(['source.mp4']);
@@ -455,7 +468,7 @@ describe('project export file policy', () => {
 
     try {
       await expectAppError(
-        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts' }).exportProject(request, { signal: controller.signal }),
+        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request, { signal: controller.signal }),
         'JOB_CANCELED'
       );
       expect(await readdir(folder)).toEqual(['source.mp4']);
@@ -469,7 +482,7 @@ describe('project export file policy', () => {
     const { folder, request } = await setup({ sourceLanguage: 'en/US', targetLanguage: '  ' });
 
     try {
-      const result = await new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts' }).exportProject({
+      const result = await new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject({
         ...request,
         outputs: { originalSrt: true, translationSrt: true, video: 'none' }
       });
@@ -477,6 +490,83 @@ describe('project export file policy', () => {
     } finally {
       await rm(folder, { recursive: true, force: true });
     }
+  });
+});
+
+describe('project export geometry', () => {
+  it('lays out subtitles for the probed size and ignores the request size', async () => {
+    const { folder, request } = await setup({ videoWidth: 360, videoHeight: 640, outputs: { originalSrt: false, translationSrt: false, video: 'original' } });
+    const probe = fakeProbe({ width: 720, height: 1280 });
+    const { service, calls } = fakeFfmpeg();
+
+    try {
+      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: probe.probe }).exportProject(request);
+
+      expect(probe.calls).toEqual([{ inputPath: join(folder, 'source.mp4') }]);
+      expect(calls[0].assDocument).toContain('PlayResX: 720');
+      expect(calls[0].assDocument).toContain('PlayResY: 1280');
+      expect(calls[0].args[calls[0].args.indexOf('-vf') + 1]).toMatch(/^scale=720:1280,setsar=1,ass=/);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps VFR timing, leaves audio re-encoded, and never adds -copyts or a forced frame rate', async () => {
+    const { folder, request } = await setup({ outputs: { originalSrt: false, translationSrt: false, video: 'original' } });
+    const { service, calls } = fakeFfmpeg();
+
+    try {
+      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request);
+      const args = calls[0].args;
+
+      expect(args[args.indexOf('-fps_mode:v') + 1]).toBe('passthrough');
+      expect(args).not.toContain('-copyts');
+      expect(args).not.toContain('-r');
+      expect(args[args.indexOf('-c:a') + 1]).toBe('aac');
+      expect(args).not.toContain('-c:a copy');
+      expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'));
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a source without a video stream before rendering', async () => {
+    const { folder, request } = await setup({ outputs: { originalSrt: false, translationSrt: false, video: 'original' } });
+    const audioOnly = async (input: MediaProbeRequest): Promise<MediaProbeResult> => ({ inputPath: input.inputPath, hasVideo: false, hasAudio: true });
+    const { service, calls } = fakeFfmpeg();
+
+    try {
+      await expectAppError(new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: audioOnly }).exportProject(request), 'UNKNOWN');
+      expect(calls).toHaveLength(0);
+      expect(await readdir(folder)).toEqual(['source.mp4']);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('does not probe for SRT-only exports', async () => {
+    const { folder, request } = await setup();
+    const probe = fakeProbe();
+
+    try {
+      await new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: probe.probe }).exportProject(request);
+      expect(probe.calls).toHaveLength(0);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the display size from ffprobe, with the sample aspect ratio folded into the width', async () => {
+    const ffprobe = async () => ({
+      stdout: JSON.stringify({
+        format: { duration: '4.000' },
+        streams: [{ codec_type: 'video', width: 720, height: 576, sample_aspect_ratio: '4:3' }, { codec_type: 'audio' }]
+      }),
+      stderr: ''
+    });
+    const media = new MediaService({ ffprobe } as unknown as FfmpegService);
+
+    await expect(media.probe({ inputPath: '/clips/anamorphic.mkv' })).resolves.toMatchObject({ hasVideo: true, width: 960, height: 576 });
   });
 });
 

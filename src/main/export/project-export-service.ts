@@ -9,8 +9,11 @@ import { FfmpegService } from '../ffmpeg';
 import { buildAssDocument } from './ass';
 import { type CaptionTextField, type ExportCaption, captionCuesFor, hasText, toExportCaptions } from './captions';
 import { buildCopyFilename, sanitizeFilePart } from './filenames';
+import { escapeFilterValue, formatSeconds, throwIfCanceled } from './ffmpeg-args';
+import { type PreviewFrameContext, type PreviewFrameRequest, type PreviewFrameResult, renderPreviewFrame } from './preview-frame';
 import { buildSrtFromCaptions } from './srt';
 import { validateSubtitleTiming } from './timing';
+import { type ProbeFn, type VideoSize, defaultProbe, probeVideoSize } from './video-size';
 
 export type ProjectExportProgress = {
   stage: JobStage;
@@ -26,6 +29,8 @@ export type ProjectExportContext = {
 export type ProjectExportServiceOptions = {
   /** Defaults to the system `ffmpeg`. */
   ffmpeg?: Pick<FfmpegService, 'run'>;
+  /** Defaults to ffprobe through MediaService. Used for the source's display size. */
+  probe?: ProbeFn;
   /** Directory with the bundled Noto Sans fonts, passed to libass as fontsdir. */
   fontsDir: string;
 };
@@ -46,11 +51,18 @@ type PendingOutput = PlannedOutput & {
  */
 export class ProjectExportService {
   private readonly ffmpeg: Pick<FfmpegService, 'run'>;
+  private readonly probe: ProbeFn;
   private readonly fontsDir: string;
 
   constructor(options: ProjectExportServiceOptions) {
     this.ffmpeg = options.ffmpeg ?? new FfmpegService();
+    this.probe = options.probe ?? defaultProbe();
     this.fontsDir = options.fontsDir;
+  }
+
+  /** Paused-frame preview with the same ASS path and size source as the export. */
+  renderPreviewFrame(request: PreviewFrameRequest, context: PreviewFrameContext = {}): Promise<PreviewFrameResult> {
+    return renderPreviewFrame(request, context, { ffmpeg: this.ffmpeg, probe: this.probe, fontsDir: this.fontsDir });
   }
 
   async exportProject(request: ProjectExportRequest, context: ProjectExportContext = {}): Promise<ProjectExportResult> {
@@ -116,6 +128,8 @@ export class ProjectExportService {
     const { request, captions, outputPath, signal, onProgress } = input;
     const durationMs = request.trim.endMs - request.trim.startMs;
     const field: CaptionTextField = request.outputs.video === 'translation' ? 'translation' : 'original';
+    // The request's size is ignored: layout must match the file that is actually rendered.
+    const size = await probeVideoSize(this.probe, request.inputPath);
 
     const assDir = await mkdtemp(join(tmpdir(), 'tajtlisha-ass-'));
     try {
@@ -123,8 +137,8 @@ export class ProjectExportService {
       const assDocument = buildAssDocument({
         captions: captionCuesFor(captions, field),
         style: request.style,
-        videoWidth: request.videoWidth,
-        videoHeight: request.videoHeight
+        videoWidth: size.width,
+        videoHeight: size.height
       });
       await writeFile(assPath, assDocument, 'utf8');
 
@@ -135,6 +149,7 @@ export class ProjectExportService {
           outputPath,
           assPath,
           fontsDir: this.fontsDir,
+          size,
           startMs: request.trim.startMs,
           durationMs
         }),
@@ -291,9 +306,17 @@ function buildVideoArgs(input: {
   outputPath: string;
   assPath: string;
   fontsDir: string;
+  size: VideoSize;
   startMs: number;
   durationMs: number;
 }): string[] {
+  // Anamorphic sources are scaled to square pixels first: the subtitles were laid out for that size.
+  const filter = [
+    `scale=${input.size.width}:${input.size.height}`,
+    'setsar=1',
+    `ass=filename=${escapeFilterValue(input.assPath)}:fontsdir=${escapeFilterValue(input.fontsDir)}`
+  ].join(',');
+
   return [
     '-y',
     '-ss',
@@ -307,7 +330,10 @@ function buildVideoArgs(input: {
     '-map',
     '0:a:0?',
     '-vf',
-    `ass=filename=${escapeFilterValue(input.assPath)}:fontsdir=${escapeFilterValue(input.fontsDir)}`,
+    filter,
+    // Keep variable frame timing; never force a constant -r, which would drift the captions.
+    '-fps_mode:v',
+    'passthrough',
     '-c:v',
     'libx264',
     '-preset',
@@ -329,27 +355,8 @@ function buildVideoArgs(input: {
   ];
 }
 
-function formatSeconds(ms: number): string {
-  return (ms / 1000).toFixed(3);
-}
-
-/**
- * Escapes a value for an ffmpeg filter option. Each special character gets three
- * backslashes: the filtergraph parser consumes one level and the filter's option
- * parser reads the next. Quoting alone broke on paths with quotes or colons.
- */
-export function escapeFilterValue(value: string): string {
-  return value.replace(/[\\':,[\];]/g, (char) => `\\\\\\${char}`);
-}
-
 function tempPathFor(outputPath: string): string {
   return join(dirname(outputPath), `.${basename(outputPath)}.tajtlisha-tmp`);
-}
-
-function throwIfCanceled(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) {
-    throw new AppError('JOB_CANCELED');
-  }
 }
 
 async function removeFiles(paths: string[]): Promise<void> {
