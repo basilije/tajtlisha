@@ -44,3 +44,29 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 - Windows (later): NSIS installer updates itself.
 - Development runs (`pnpm dev`) never check for updates.
 - The app checks on startup and from Settings > About. Downloading and installing always need user action.
+
+## Packaging commands
+
+- `pnpm dist` builds `out/` and then packages Linux (AppImage and deb, x64) into `release/<version>/`. Nothing is published.
+- `pnpm dist:dir` builds an unpacked app in `release/<version>/linux-unpacked/` for quick checks (no installer).
+- `pnpm release:publish` builds and uploads to the GitHub Release for the current `package.json` version. The release
+  workflow runs this on tags `v*`; run it locally only with a `GH_TOKEN` that can write to `blonestar/tajtlisha`.
+
+Artifacts in `release/<version>/`:
+
+- `Tajtlisha-<version>-x64.AppImage`: self-updating build.
+- `Tajtlisha-<version>-x64.deb`: no auto-update; users reinstall from the release page.
+- `latest-linux.yml`: update manifest read by electron-updater. Must be uploaded with the AppImage.
+
+Runtime requirement: the app calls `ffmpeg` and `ffprobe` from the system `PATH`. The deb declares `ffmpeg` as a
+dependency; AppImage users must install ffmpeg themselves (for example `sudo apt install ffmpeg`). Windows builds
+will need a bundled ffmpeg later (not part of the Linux packaging).
+
+Testing an update locally: auto-update only runs in a packaged AppImage (the `APPIMAGE` env variable must be set),
+so `pnpm dev` never checks. A full end-to-end update needs two published releases; until then, verify the
+`unsupported`/`idle`/`error` states from Settings and the unit tests in `tests/main/local/updater.test.ts`.
+Packaging itself is checked by running `pnpm dist:dir` and starting `release/<version>/linux-unpacked/tajtlisha`.
+
+CI: `.github/workflows/ci.yml` runs typecheck, tests and build on pushes and pull requests to `develop` and `master`.
+`.github/workflows/release.yml` runs on `v*` tags, fails if the tag does not equal `v` + `package.json` version, and
+publishes the release.
