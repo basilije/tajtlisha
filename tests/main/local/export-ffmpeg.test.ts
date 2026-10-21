@@ -54,7 +54,7 @@ describe.skipIf(!ffmpegAvailable)('project export with real ffmpeg', () => {
         expect(firstStart).toBe('00:00:00,200');
       }
 
-      const leftovers = (await readdir(folder)).filter((name) => name.endsWith('.tajtlisha-tmp'));
+      const leftovers = (await readdir(folder)).filter((name) => name.startsWith('.tajtlisha-export-'));
       expect(leftovers).toEqual([]);
     } finally {
       await rm(folder, { recursive: true, force: true });
