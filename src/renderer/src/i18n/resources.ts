@@ -1,4 +1,8 @@
-export const resources = {
+import { captionsStrings } from './strings/captions';
+import { previewStrings } from './strings/preview';
+import { shellStrings } from './strings/shell';
+
+const baseResources = {
   en: {
     translation: {
       app: {
@@ -381,3 +385,22 @@ export const resources = {
     }
   }
 } as const;
+
+type UiLang = keyof typeof baseResources;
+
+function withAreaStrings<L extends UiLang>(language: L) {
+  return {
+    translation: {
+      ...baseResources[language].translation,
+      preview: previewStrings[language],
+      captions: captionsStrings[language],
+      shell: shellStrings[language]
+    }
+  };
+}
+
+export const resources = {
+  en: withAreaStrings('en'),
+  'sr-Latn': withAreaStrings('sr-Latn'),
+  'sr-Cyrl': withAreaStrings('sr-Cyrl')
+};
