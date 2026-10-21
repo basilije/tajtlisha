@@ -198,7 +198,13 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
         !timingChanged && textFields.length > 0 ? `caption-text:${action.id}:${textFields.join(',')}` : undefined;
 
       const captions = sortCaptions(replaceAt(project.captions, index, next));
-      return applyEdit(state, { ...project, captions }, { coalesceKey, at: action.now ?? Date.now() });
+      const edited: ProjectDocument = { ...project, captions };
+      // The first translation typed by hand defines the translation language, so
+      // manual work in a project that never had AI translations is not "stale".
+      if (action.patch.translation !== undefined && project.translationLanguage === undefined) {
+        edited.translationLanguage = project.targetLanguage;
+      }
+      return applyEdit(state, edited, { coalesceKey, at: action.now ?? Date.now() });
     }
 
     case 'caption/insert': {

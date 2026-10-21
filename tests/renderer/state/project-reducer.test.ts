@@ -926,4 +926,16 @@ describe('revision mirror', () => {
   it('createEmptyProject starts at revision 0', () => {
     expect(createEmptyProject({ targetLanguage: 'en' }).revision).toBe(0);
   });
+
+  it('sets the translation language on the first manual translation', () => {
+    let state = createProjectState(createEmptyProject({ targetLanguage: 'sr-Latn' }));
+    state = projectReducer(state, {
+      type: 'captions/replaceAll',
+      captions: [{ id: 'a', startMs: 0, endMs: 1000, original: 'Hello', translation: '' }]
+    });
+    expect(state.project.translationLanguage).toBeUndefined();
+    state = projectReducer(state, { type: 'caption/update', id: 'a', patch: { translation: 'Zdravo' }, now: 1 });
+    expect(state.project.translationLanguage).toBe('sr-Latn');
+    expect(state.project.captions[0].translatedFrom).toBe('Hello');
+  });
 });
