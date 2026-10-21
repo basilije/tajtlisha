@@ -1,9 +1,9 @@
-import Languages from 'lucide-react/dist/esm/icons/languages.js';
 import type { ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { UiLanguage } from '../../../shared/types/settings';
 
 type LanguageSwitcherProps = {
+  id?: string;
   value: UiLanguage;
   onChange: (language: UiLanguage) => void;
 };
@@ -17,26 +17,22 @@ const languageLabelKeys: Record<UiLanguage, string> = {
   'sr-Cyrl': 'language.srCyrl'
 };
 
-export function LanguageSwitcher({ value, onChange }: LanguageSwitcherProps): ReactElement {
+export function LanguageSwitcher({ id, value, onChange }: LanguageSwitcherProps): ReactElement {
   const { t } = useTranslation();
 
   return (
-    <label className="language-switcher">
-      <span>
-        <Languages aria-hidden="true" size={16} />
-        {t('language.label')}
-      </span>
-      <select
-        aria-label={t('language.label')}
-        value={value}
-        onChange={(event) => onChange(event.target.value as UiLanguage)}
-      >
-        {languageOptions.map((language) => (
-          <option key={language} value={language}>
-            {t(languageLabelKeys[language])}
-          </option>
-        ))}
-      </select>
-    </label>
+    <select
+      id={id}
+      className="select"
+      aria-label={t('language.label')}
+      value={value}
+      onChange={(event) => onChange(event.target.value as UiLanguage)}
+    >
+      {languageOptions.map((language) => (
+        <option key={language} value={language}>
+          {t(languageLabelKeys[language])}
+        </option>
+      ))}
+    </select>
   );
 }
