@@ -87,7 +87,7 @@ describe('i18n resources', () => {
   it('keeps sr-Cyrl free of Latin text except allowed technical names', () => {
     const allowed = new RegExp(`\\b(${allowedLatinTokens.join('|')})\\b`, 'g');
     const mismatches = Object.entries(srCyrl).flatMap(([key, value]) => {
-      const stripped = value.replace(placeholderPattern, '').replace(allowed, '');
+      const stripped = value.replace(new RegExp(placeholderPattern.source, 'g'), '').replace(allowed, '');
 
       return /[A-Za-z]/.test(stripped) ? [`${key}: "${value}"`] : [];
     });
