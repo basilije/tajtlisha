@@ -36,6 +36,11 @@ export type ProjectStore = {
   sourceStatus: SourceStatus | null;
   /** True when edits exist that the last successful save did not cover. A failed save keeps this true. */
   isDirty: boolean;
+  /**
+   * Writes the pending edit now and resolves when the write settles. Never
+   * rejects: a failed write is kept for retry and reported through saveError.
+   */
+  flush: () => Promise<void>;
 };
 
 type PendingSave = { project: ProjectDocument; revision: number };
@@ -66,26 +71,32 @@ export function useProjectStore(options: UseProjectStoreOptions): ProjectStore {
     setSavedRevision(savedRevisionRef.current);
   }, []);
 
-  const flush = useCallback(() => {
+  // Settles when the latest write does. Main serializes saves and ignores older revisions, so writes need no queue.
+  const lastWriteRef = useRef<Promise<void>>(Promise.resolve());
+
+  const flush = useCallback((): Promise<void> => {
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
     const pending = pendingRef.current;
-    if (!pending || !api) return;
+    if (!pending || !api) return lastWriteRef.current;
     pendingRef.current = null;
 
-    api.project.save(pending.project).then(
+    // Called synchronously so unload and quit handlers reach main before the window goes away.
+    const write = api.project.save(pending.project).then(
       (result) => {
         markSaved(result.savedRevision);
         setSaveError(null);
       },
       (error: unknown) => {
-        // Keep the snapshot so the next edit or unload retries it.
+        // Keep the snapshot so the next edit, retry or unload writes it.
         if (!pendingRef.current) pendingRef.current = pending;
         setSaveError(toErrorMessage(error));
       }
     );
+    lastWriteRef.current = write;
+    return write;
   }, [api, markSaved]);
 
   const dispatch = useCallback((action: ProjectAction) => {
@@ -149,7 +160,8 @@ export function useProjectStore(options: UseProjectStoreOptions): ProjectStore {
     ready,
     saveError,
     sourceStatus,
-    isDirty: state.revision > savedRevision
+    isDirty: state.revision > savedRevision,
+    flush
   };
 }
 
