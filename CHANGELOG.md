@@ -27,8 +27,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 - UI language "System" follows the OS language (Serbian, Croatian, Bosnian -> Serbian Latin).
 
 ### Fixed
+- Export never writes through links or predictable temp files, keeps previous outputs when a replacement fails,
+  and never overwrites the source video.
+- Quitting saves the last edit and waits for running jobs to stop.
 - Serbian Latin UI strings now use proper letters (č, ć, š, ž, đ); Serbian Cyrillic no longer mixes in English words.
 - Audio for transcription is mono 16 kHz 64 kbps MP3, well below the 25 MB API limit.
+
+### Security
+- IPC only answers the app's own window; navigation away from the app is blocked; saved projects are
+  validated and can only point the media tools at files you opened.
 
 ### Changed
 - IPC surface reduced to project, workflow, jobs, export, media status, updates and app info.
