@@ -2,40 +2,69 @@ import type {
   AiProviderCapabilities,
   AiProviderId,
   ConnectProviderInput,
-  GenerateSubtitlesRequest,
-  GenerateSubtitlesResult,
   ProviderModelDescriptor,
   ProviderStatus,
   ProviderSummary,
-  SubtitlePolishRequest,
-  TestConnectionResult,
-  TranscriptionRequest,
-  TranscriptionResult,
-  TranslationRequest
+  TestConnectionResult
 } from './ai';
+import type { SelectOutputFolderResult } from './export';
 import type {
-  BurnSubtitlesRequest,
-  BurnSubtitlesResult,
-  ExportProjectRequest,
-  ExportProjectResult,
-  SelectOutputFolderResult,
-  WriteSrtRequest,
-  WriteSrtResult
-} from './export';
-import type {
-  AudioExtractRequest,
-  AudioExtractResult,
-  CreatePreviewProxyRequest,
-  CreatePreviewProxyResult,
-  FfmpegStatus,
-  MediaProbeRequest,
-  MediaProbeResult,
-  SelectVideoResult,
-  TrimRequest,
-  TrimResult
-} from './media';
+  JobProgressEvent,
+  ProjectExportRequest,
+  ProjectExportResult,
+  TranscribeClipRequest,
+  TranscribeClipResult,
+  TranslateCaptionsRequest,
+  TranslateCaptionsResult
+} from './jobs';
+import type { FfmpegStatus } from './media';
+import type { ProjectDocument, ProjectSource } from './project';
 import type { AppSettings } from './settings';
-import type { SubtitleTrack } from './subtitles';
+import type { UpdateState } from './updates';
+
+/**
+ * IPC channel names. Main registers handlers for exactly these, preload
+ * forwards exactly these. Keep in sync with TajtlishaApi below.
+ */
+export const IPC_CHANNELS = {
+  settingsGet: 'settings:get',
+  settingsUpdate: 'settings:update',
+  settingsReset: 'settings:reset',
+
+  aiListProviders: 'ai:listProviders',
+  aiGetProviderStatus: 'ai:getProviderStatus',
+  aiConnectProvider: 'ai:connectProvider',
+  aiDisconnectProvider: 'ai:disconnectProvider',
+  aiTestConnection: 'ai:testConnection',
+  aiListModels: 'ai:listModels',
+
+  projectSelectVideo: 'project:selectVideo',
+  projectLoadLast: 'project:loadLast',
+  projectSave: 'project:save',
+  projectCreatePreviewProxy: 'project:createPreviewProxy',
+
+  workflowTranscribe: 'workflow:transcribe',
+  workflowTranslate: 'workflow:translate',
+
+  jobsCancel: 'jobs:cancel',
+  /** main -> renderer event, payload JobProgressEvent */
+  jobsProgress: 'jobs:progress',
+
+  exportSelectOutputFolder: 'export:selectOutputFolder',
+  exportProject: 'export:project',
+  exportShowInFolder: 'export:showInFolder',
+
+  mediaGetFfmpegStatus: 'media:getFfmpegStatus',
+
+  updatesGetState: 'updates:getState',
+  updatesCheck: 'updates:check',
+  updatesDownload: 'updates:download',
+  updatesInstall: 'updates:install',
+  /** main -> renderer event, payload UpdateState */
+  updatesState: 'updates:state',
+
+  appGetInfo: 'app:getInfo'
+} as const;
 
 export type TajtlishaApi = {
   settings: {
@@ -50,23 +79,43 @@ export type TajtlishaApi = {
     disconnectProvider(providerId: AiProviderId): Promise<ProviderStatus>;
     testConnection(providerId: AiProviderId): Promise<TestConnectionResult>;
     listModels(providerId: AiProviderId, capability: keyof AiProviderCapabilities): Promise<ProviderModelDescriptor[]>;
-    transcribe(providerId: AiProviderId, request: TranscriptionRequest): Promise<TranscriptionResult>;
-    translate(providerId: AiProviderId, request: TranslationRequest): Promise<SubtitleTrack>;
-    polishSubtitles(providerId: AiProviderId, request: SubtitlePolishRequest): Promise<SubtitleTrack>;
-    generateSubtitles(request: GenerateSubtitlesRequest): Promise<GenerateSubtitlesResult>;
   };
-  media: {
-    selectVideo(): Promise<SelectVideoResult>;
-    createPreviewProxy(input: CreatePreviewProxyRequest): Promise<CreatePreviewProxyResult>;
-    getFfmpegStatus(): Promise<FfmpegStatus>;
-    probe(input: MediaProbeRequest): Promise<MediaProbeResult>;
-    trim(input: TrimRequest): Promise<TrimResult>;
-    extractAudio(input: AudioExtractRequest): Promise<AudioExtractResult>;
+  project: {
+    /** Opens a file dialog and probes the video. Null when canceled. */
+    selectVideo(): Promise<ProjectSource | null>;
+    /** Last autosaved project with a fresh fileUrl, or null (none saved / source file missing). */
+    loadLast(): Promise<ProjectDocument | null>;
+    /** Persists the project (autosave). fileUrl is not trusted on load. */
+    save(project: ProjectDocument): Promise<void>;
+    /** Transcodes an H.264 preview for files Chromium cannot decode. Returns a playable URL. */
+    createPreviewProxy(inputPath: string): Promise<{ fileUrl: string }>;
+  };
+  workflow: {
+    transcribe(request: TranscribeClipRequest): Promise<TranscribeClipResult>;
+    translate(request: TranslateCaptionsRequest): Promise<TranslateCaptionsResult>;
+  };
+  jobs: {
+    cancel(jobId: string): Promise<void>;
+    /** Subscribes to progress events; returns an unsubscribe function. */
+    onProgress(listener: (event: JobProgressEvent) => void): () => void;
   };
   export: {
     selectOutputFolder(): Promise<SelectOutputFolderResult>;
-    writeSrt(input: WriteSrtRequest): Promise<WriteSrtResult>;
-    burnSubtitles(input: BurnSubtitlesRequest): Promise<BurnSubtitlesResult>;
-    exportProject(input: ExportProjectRequest): Promise<ExportProjectResult>;
+    exportProject(request: ProjectExportRequest): Promise<ProjectExportResult>;
+    showInFolder(path: string): Promise<void>;
+  };
+  media: {
+    getFfmpegStatus(): Promise<FfmpegStatus>;
+  };
+  updates: {
+    getState(): Promise<UpdateState>;
+    check(): Promise<UpdateState>;
+    download(): Promise<UpdateState>;
+    /** Quits and installs a downloaded update. */
+    install(): Promise<void>;
+    onState(listener: (state: UpdateState) => void): () => void;
+  };
+  app: {
+    getInfo(): Promise<{ version: string; platform: string; isPackaged: boolean }>;
   };
 };

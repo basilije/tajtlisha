@@ -11,6 +11,15 @@ import { millisecondsToSeconds, validateAudioExtractRequest, validatePath, valid
 
 type FfprobeStream = {
   codec_type?: string;
+  width?: number;
+  height?: number;
+  tags?: { rotate?: string };
+  side_data_list?: Array<{ rotation?: number }>;
+};
+
+export type MediaRunOptions = {
+  signal?: AbortSignal;
+  onProgress?: (outTimeMs: number) => void;
 };
 
 type FfprobePayload = {
@@ -42,16 +51,20 @@ export class MediaService {
     ]);
     const payload = JSON.parse(result.stdout) as FfprobePayload;
     const durationSeconds = payload.format?.duration ? Number(payload.format.duration) : undefined;
+    const videoStream = payload.streams?.find((stream) => stream.codec_type === 'video');
+    const displaySize = videoStream ? displaySizeOf(videoStream) : undefined;
 
     return {
       inputPath: input.inputPath,
       durationMs: durationSeconds !== undefined && Number.isFinite(durationSeconds) ? Math.round(durationSeconds * 1000) : undefined,
       hasAudio: payload.streams?.some((stream) => stream.codec_type === 'audio') ?? false,
-      hasVideo: payload.streams?.some((stream) => stream.codec_type === 'video') ?? false
+      hasVideo: Boolean(videoStream),
+      width: displaySize?.width,
+      height: displaySize?.height
     };
   }
 
-  async trim(input: TrimRequest): Promise<TrimResult> {
+  async trim(input: TrimRequest, options: MediaRunOptions = {}): Promise<TrimResult> {
     validateTrimRequest(input);
 
     const durationMs = input.endMs - input.startMs;
@@ -79,7 +92,7 @@ export class MediaService {
       '-avoid_negative_ts',
       'make_zero',
       input.outputPath
-    ]);
+    ], options);
 
     return {
       outputPath: input.outputPath,
@@ -87,7 +100,7 @@ export class MediaService {
     };
   }
 
-  async createPreviewProxy(inputPath: string, outputPath: string): Promise<void> {
+  async createPreviewProxy(inputPath: string, outputPath: string, options: MediaRunOptions = {}): Promise<void> {
     validatePath(inputPath, 'inputPath');
     validatePath(outputPath, 'outputPath');
 
@@ -114,10 +127,10 @@ export class MediaService {
       '-movflags',
       '+faststart',
       outputPath
-    ]);
+    ], options);
   }
 
-  async extractAudio(input: AudioExtractRequest): Promise<AudioExtractResult> {
+  async extractAudio(input: AudioExtractRequest, options: MediaRunOptions = {}): Promise<AudioExtractResult> {
     validateAudioExtractRequest(input);
 
     const args = ['-y'];
@@ -136,7 +149,7 @@ export class MediaService {
     args.push(...audioCodecArgs(input.format));
     args.push(input.outputPath);
 
-    await this.ffmpeg.run(args);
+    await this.ffmpeg.run(args, options);
 
     return {
       outputPath: input.outputPath,
@@ -144,6 +157,13 @@ export class MediaService {
       durationMs: input.endMs !== undefined ? input.endMs - (input.startMs ?? 0) : undefined
     };
   }
+}
+
+function displaySizeOf(stream: FfprobeStream): { width: number; height: number } | undefined {
+  if (!stream.width || !stream.height) return undefined;
+  const sideRotation = stream.side_data_list?.find((entry) => typeof entry.rotation === 'number')?.rotation;
+  const rotation = Math.abs(Number(sideRotation ?? stream.tags?.rotate ?? 0)) % 180;
+  return rotation === 90 ? { width: stream.height, height: stream.width } : { width: stream.width, height: stream.height };
 }
 
 function audioCodecArgs(format: AudioExtractRequest['format']): string[] {

@@ -14,6 +14,9 @@ export type MediaProbeResult = {
   durationMs?: number;
   hasAudio?: boolean;
   hasVideo?: boolean;
+  /** Display size of the first video stream, rotation applied. */
+  width?: number;
+  height?: number;
 };
 
 export type SelectVideoResult = {

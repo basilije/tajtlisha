@@ -1,20 +1,46 @@
+/**
+ * Resolution-independent subtitle style.
+ *
+ * All sizes are relative to the video frame so the editor preview (any display
+ * size) and the burned-in export (native video resolution) render the same
+ * layout. Convert to pixels only through `computeSubtitleGeometry` in
+ * `src/shared/subtitle-geometry.ts`.
+ */
 export type SubtitleStyle = {
-  presetId?: string;
+  presetId?: SubtitlePresetId;
+  /** Font family name. Must be one of SUBTITLE_FONT_FAMILIES (bundled fonts). */
   fontFamily: string;
-  fontSizePx: number;
-  fontWeight: 'regular' | 'medium' | 'semibold' | 'bold';
+  /** Font size as a percentage of the video height. Range 2..12. */
+  fontSizePercent: number;
+  bold: boolean;
   italic: boolean;
+  /** #rrggbb */
   textColor: string;
   outlineEnabled: boolean;
+  /** #rrggbb */
   outlineColor: string;
-  outlineWidthPx: number;
+  /** Outline thickness as a percentage of the font size. Range 0..20. */
+  outlineWidthPercent: number;
   shadowEnabled: boolean;
+  /** #rrggbb */
   shadowColor: string;
-  shadowBlurPx: number;
-  shadowOffsetX: number;
-  shadowOffsetY: number;
+  /**
+   * Opaque box behind the text. When enabled the text outline is not drawn
+   * (ASS BorderStyle=3 uses the outline for the box), in preview and export.
+   */
+  backgroundEnabled: boolean;
+  /** #rrggbb */
+  backgroundColor: string;
+  /** 0..1 */
+  backgroundOpacity: number;
   position: 'top' | 'middle' | 'bottom';
   align: 'left' | 'center' | 'right';
+  /** Distance from the top/bottom edge as a percentage of video height. Range 0..30. */
+  marginVerticalPercent: number;
+  /** Maximum text block width as a percentage of video width. Range 40..100. */
   maxWidthPercent: number;
-  maxLines: 1 | 2;
 };
+
+export type SubtitlePresetId = 'clean' | 'box' | 'bold_yellow';
+
+export const SUBTITLE_FONT_FAMILIES = ['Noto Sans'] as const;
