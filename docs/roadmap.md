@@ -6,9 +6,7 @@ Cilj: smanjiti najvece rizike pre implementacije UI-a.
 
 Zadaci:
 
-- OpenAI OAuth/login auth spike.
 - Proveriti da li Codex CLI auth moze legalno i stabilno da se koristi bez citanja internog cache fajla.
-- Proveriti OpenRouter transcription API i format odgovora.
 - Proveriti `ffmpeg` komande za trim, audio extract i burned-in subtitles.
 - Izabrati Electron setup.
 - Potvrditi i18n stack: `i18next` plus `react-i18next` ako renderer bude React.

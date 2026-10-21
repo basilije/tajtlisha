@@ -1,0 +1,20 @@
+export type SubtitleStyle = {
+  presetId?: string;
+  fontFamily: string;
+  fontSizePx: number;
+  fontWeight: 'regular' | 'medium' | 'semibold' | 'bold';
+  italic: boolean;
+  textColor: string;
+  outlineEnabled: boolean;
+  outlineColor: string;
+  outlineWidthPx: number;
+  shadowEnabled: boolean;
+  shadowColor: string;
+  shadowBlurPx: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  position: 'top' | 'middle' | 'bottom';
+  align: 'left' | 'center' | 'right';
+  maxWidthPercent: number;
+  maxLines: 1 | 2;
+};

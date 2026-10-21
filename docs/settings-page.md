@@ -74,8 +74,7 @@ UI mora da prikaze:
 
 OpenAI:
 
-- prioritet: OAuth/login spike ako postoji stabilan podrzan flow,
-- fallback: API key.
+- API key.
 
 OpenRouter:
 
@@ -95,7 +94,7 @@ AI connector treba da omoguci:
 - model za subtitle polish,
 - kasnije TTS/voiceover model.
 
-Ako provider podrzava model listing, app ga ucitava. Ako ne podrzava, app moze imati rucno unet model ID uz validaciju kroz test connection.
+App prikazuje birače modela: poznate OpenAI modele i katalog OpenRouter modela. Prazan izbor koristi provider default; OpenRouter transkripcija koristi `openai/whisper-large-v3` kada model nije izabran.
 
 ### Subtitle AI opcije
 

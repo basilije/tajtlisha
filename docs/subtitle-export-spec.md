@@ -118,6 +118,8 @@ Prihvatljivo je da rendering engine bude drugaciji, ali vizuelni rezultat mora b
 - isti outline/shadow princip,
 - isti line break-ovi.
 
+Trenutni editor ima style kontrole za font family, velicinu, debljinu, boju, outline, shadow, poziciju, alignment, maksimalnu sirinu i broj linija. Isti `SubtitleStyle` state se koristi za preview overlay i `exportProject` zahtev.
+
 Ako `ffmpeg` subtitle renderer ne podrzi tacno isti efekat kao preview, dokumentovati odstupanje i ponuditi najblizi fallback.
 
 ## Burned-in MP4 export
@@ -131,6 +133,13 @@ Export servis mora:
 5. pratiti progress,
 6. prijaviti greske,
 7. sacuvati finalni MP4.
+
+Trenutna implementacija ima project export servis koji:
+
+- pise originalni i/ili prevedeni SRT,
+- ako je zadat trim range, pravi privremeni trimovani MP4,
+- pomera subtitle timing tako da exportovani timeline pocinje od `00:00:00`,
+- koristi isti `SubtitleStyle` ugovor za burned-in MP4 export.
 
 ## Edge case-ovi
 
@@ -180,4 +189,3 @@ Phase 2 workflow:
 3. App mapira TTS segmente na video timing.
 4. App zamenjuje ili stisava originalni audio.
 5. App exportuje novi MP4.
-

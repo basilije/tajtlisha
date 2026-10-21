@@ -22,6 +22,7 @@ Odgovornosti:
 
 - file picker,
 - pristup lokalnim fajlovima,
+- kontrolisani lokalni media protokol za video preview bez direktnog `file://` pristupa iz renderer-a,
 - pokretanje `ffmpeg` procesa,
 - credential storage,
 - user settings storage,
@@ -256,6 +257,7 @@ Primer toka:
 - trim pocetka i kraja,
 - audio extraction,
 - transcode samo kada je potrebno,
+- H.264/AAC preview proxy kao automatski fallback kada Chromium odbije codec izvornog klipa,
 - burned-in subtitle export,
 - kasnije miksovanje TTS voiceover-a.
 
@@ -279,7 +281,9 @@ Razlog:
 
 ## Credential storage
 
-Na Linux-u koristiti Secret Service/libsecret preko odgovarajuce Node/Electron biblioteke. Ne cuvati API key-eve ili access token-e u plain text JSON fajlovima projekta.
+Na Linux-u koristiti OS-backed credential encryption kroz Electron `safeStorage` ili Secret Service/libsecret preko odgovarajuce Node/Electron biblioteke. Ne cuvati API key-eve ili access token-e u plain text JSON fajlovima projekta.
+
+Trenutni main process koristi `SecureCredentialStore`: tajne se sifruju kroz Electron `safeStorage` i cuvaju u aplikacionom `userData/credentials.json` fajlu kao encrypted payload. Ako OS credential encryption nije dostupna, store fail-uje zatvoreno umesto da upise plain text.
 
 Credential store mora podrzati:
 

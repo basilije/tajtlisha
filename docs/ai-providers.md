@@ -4,7 +4,7 @@
 
 AI sloj mora biti modularan. Aplikacija ne sme da zavisi od jednog providera u UI i subtitle logici.
 
-Prvi prioritet je OpenAI auth/login istrazivanje. OpenRouter se tretira kao dodatni API provider.
+OpenAI i OpenRouter su API provider-i; oba koriste korisnikov API key koji se cuva van renderer-a.
 
 Sva korisnicka podesavanja za AI nalaze se u posebnoj AI connector sekciji Settings stranice.
 
@@ -32,17 +32,21 @@ OpenRouter takodje ima STT endpoint za transkripciju:
 - https://openrouter.ai/docs/guides/overview/multimodal/stt
 - https://openrouter.ai/docs/api/api-reference/transcriptions/create-audio-transcriptions
 
+## Trenutno stanje implementacije
+
+- OpenAI API-key provider ima runtime pozive za transcription, translation i subtitle polish.
+- OpenAI transcription koristi `/v1/audio/transcriptions`, `verbose_json` i segment timestamp granularnost.
+- OpenAI translation/polish koristi Responses API i structured output preko `text.format` JSON schema ugovora.
+- Main process ima subtitle workflow servis koji iz videa ekstraktuje privremeni audio, poziva provider za transkripciju, prevod i opcioni polish, pa renderer-u vraca originalni i prevedeni track.
+- OpenRouter ima runtime tok za transkripciju preko `/api/v1/audio/transcriptions`, kao i translation/polish preko `/api/v1/chat/completions`.
+- Settings ucitava OpenAI poznate modele i OpenRouter katalog modela za odgovarajuce capability-je.
+- OpenAI API key je jedini podrzani auth tok za ovu aplikaciju. ChatGPT/Codex login se ne koristi za OpenAI API pozive.
+
 ## Auth strategija
 
-### Prioritet: OpenAI OAuth/login spike
+### OpenAI OAuth/login
 
-Pre implementacije OpenAI auth-a proveriti:
-
-1. Da li postoji zvanicno podrzan OpenAI/ChatGPT OAuth ili login flow za third-party desktop aplikaciju koja treba da poziva potrebne API-je.
-2. Da li taj token sme i moze da poziva audio/transcription/translation/model endpoint-e.
-3. Da li token refresh radi stabilno.
-4. Da li je flow dozvoljen za distribuiranu desktop aplikaciju.
-5. Da li je potrebno imati backend.
+Ne implementirati ChatGPT/Codex OAuth/login kao autentikaciju za OpenAI API. Zvanicna OpenAI dokumentacija navodi Platform API keys za opste OpenAI API pozive; Codex access token-i su namenjeni Enterprise automatizaciji, ne ovoj desktop aplikaciji.
 
 ### Codex CLI auth reuse
 
@@ -63,16 +67,14 @@ Dozvoljeno za istrazivanje:
 
 ### Fallback: OpenAI API key
 
-Ako OAuth/login nije stabilan za MVP, OpenAI provider mora imati API key auth fallback.
-
-Credential se cuva u OS keychain-u, ne u projektu.
+Credential se cuva u main-process credential store-u koji koristi OS-backed Electron `safeStorage` encryption, ne u projektu i ne u Settings store-u.
 
 ### OpenRouter provider
 
 OpenRouter je API provider preko Bearer token-a. Koristi se kao alternativni provider za:
 
-- transcription,
-- translation/polish preko kompatibilnih modela,
+- transcription preko `openai/whisper-large-v3` po default-u; trenutno vraca jedan segment za ceo audio jer taj endpoint ne vraca timing segmente,
+- translation/polish preko izabranog chat modela,
 - kasnije mozda TTS ako provider/model podrzi kvalitet koji treba.
 
 ## Provider capability model
