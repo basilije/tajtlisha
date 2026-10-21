@@ -33,7 +33,7 @@ or update path.
 | # | Task | Branch | Status |
 | --- | --- | --- | --- |
 | 6 | Main wiring: project store (autosave), job registry, IPC handlers, media protocol | `feat/main-wiring` | merged |
-| 7 | Video preview with style overlay, trim bar, style drawer | `feat/editor-preview` | in progress |
+| 7 | Video preview with style overlay, trim bar, style drawer | `feat/editor-preview` | merged |
 | 8 | Caption table, generate panel, job bar, export dialog | `feat/editor-captions` | merged |
 
 ## Wave 3: integration and release
@@ -82,3 +82,4 @@ or update path.
   feat/main-wiring. Task 5b (Windows NSIS + bundled ffmpeg) started.
 - 2026-10-22: feat/main-wiring merged (137 main tests, 97 AI tests; main/preload/shared type-clean). Orchestrator
   wired the updater into src/main/index.ts and added a trailing flush for throttled job progress.
+- 2026-10-22: feat/editor-preview merged (50 tests). Global Testing Library cleanup added to tests/setup.ts.
