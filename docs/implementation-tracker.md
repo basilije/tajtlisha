@@ -21,7 +21,8 @@ or update path.
 | --- | --- | --- | --- |
 | 1 | ASS generation, single-pass trim+burn export, SRT from caption rows, source protection, progress, cancel | `feat/export-ass` | merged |
 | 2 | Transcription with word timestamps (whisper-1), caption builder, speech-detection fallback, strict translation, staged workflow | `feat/ai-transcription` | merged |
-| 3 | Renderer project reducer: caption operations, undo/redo, validation, selectors | `feat/renderer-state` | in progress |
+| 3 | Renderer project reducer: caption operations, undo/redo, validation, selectors | `feat/renderer-state` | merged |
+| 3b | State follow-up: revision in document, stale translations, relink, load result, dirty flag, job context | `feat/renderer-state-followup` | in progress |
 | 4 | Serbian Latin diacritics in all UI strings | `fix/i18n-diacritics` | merged |
 | 5 | electron-builder packaging, electron-updater, CI and release workflows | `build/packaging-autoupdate` | in progress |
 | 1b | Export follow-up: shared font factor, WrapStyle 2, SAR scaling, re-probe, paused-frame render, ffmpeg capability check | `feat/export-followup` | in progress |
@@ -32,8 +33,8 @@ or update path.
 | # | Task | Branch | Status |
 | --- | --- | --- | --- |
 | 6 | Main wiring: project store (autosave), job registry, IPC handlers, media protocol | `feat/main-wiring` | todo |
-| 7 | Video preview with style overlay, trim bar, style drawer | `feat/editor-preview` | todo |
-| 8 | Caption table, generate panel, job bar, export dialog | `feat/editor-captions` | todo |
+| 7 | Video preview with style overlay, trim bar, style drawer | `feat/editor-preview` | in progress |
+| 8 | Caption table, generate panel, job bar, export dialog | `feat/editor-captions` | in progress |
 
 ## Wave 3: integration and release
 
@@ -67,3 +68,5 @@ or update path.
 - 2026-10-21: feat/ai-transcription (97 tests) and fix/i18n-diacritics merged. Renderer tests run sequentially
   (repo is on a bindfs FUSE mount; parallel jsdom workers timed out). Follow-ups noted: i18n plural forms for
   counts, text-only captions may exceed 6 s.
+- 2026-10-21: feat/renderer-state merged (139 renderer tests); follow-up 3b started. Design tokens, UI primitives,
+  per-area i18n files and timecode utils added on develop. Wave 2 UI workers (7, 8) started.
