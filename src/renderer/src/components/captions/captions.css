@@ -1,0 +1,163 @@
+/* Caption table: one row per caption, dense but readable. */
+
+.caption-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.caption-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+}
+
+.caption-table thead th {
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  position: sticky;
+  text-align: left;
+  top: 0;
+  z-index: 1;
+}
+
+.caption-table thead th > span {
+  margin-right: var(--space-2);
+}
+
+.caption-head-count {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.caption-table td {
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-2) var(--space-2);
+  vertical-align: top;
+}
+
+.caption-table th,
+.caption-table td {
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+}
+
+.caption-col-index {
+  width: 40px;
+}
+.caption-col-time {
+  width: 230px;
+}
+.caption-col-text {
+  min-width: 180px;
+}
+.caption-col-status {
+  width: 170px;
+}
+.caption-col-actions {
+  width: 132px;
+}
+
+.caption-index {
+  color: var(--text-faint);
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding-top: var(--space-1);
+}
+
+/* Rows */
+.caption-row {
+  cursor: pointer;
+}
+.caption-row:hover td {
+  background: var(--surface-2);
+}
+.caption-row.is-selected td {
+  background: var(--surface-3);
+}
+.caption-row.is-active td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.caption-row.is-active .caption-index {
+  color: var(--accent);
+}
+
+/* Time cell */
+.caption-time-field {
+  align-items: center;
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
+}
+.caption-time-label {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  width: 32px;
+}
+.caption-time-input {
+  height: 26px;
+  padding: 0 var(--space-1);
+  text-align: center;
+  width: 92px;
+}
+.caption-duration {
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+
+.caption-nudge {
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.caption-row:hover .caption-nudge,
+.caption-row.is-selected .caption-nudge,
+.caption-row:focus-within .caption-nudge {
+  opacity: 1;
+}
+
+/* Text cells */
+.caption-col-text .textarea {
+  font-size: var(--text-md);
+  width: 100%;
+}
+.caption-line-warnings {
+  color: var(--warning);
+  font-size: var(--text-xs);
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+}
+
+/* Status badges */
+.caption-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* Row actions: hidden until the row is hovered, selected or focused */
+.caption-row-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.caption-row:hover .caption-row-actions,
+.caption-row.is-selected .caption-row-actions,
+.caption-row:focus-within .caption-row-actions {
+  opacity: 1;
+}
+.btn-icon-danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.caption-empty-state {
+  color: var(--text-muted);
+  padding: var(--space-5);
+  text-align: center;
+}
