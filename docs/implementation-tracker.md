@@ -36,6 +36,14 @@ or update path.
 | 7 | Video preview with style overlay, trim bar, style drawer | `feat/editor-preview` | merged |
 | 8 | Caption table, generate panel, job bar, export dialog | `feat/editor-captions` | merged |
 
+## Hardening (from Sol review of develop at 181d4db)
+
+| # | Task | Branch | Status |
+| --- | --- | --- | --- |
+| H1 | Export staging dir, destination validation, backup/rollback publish, no-clobber publish, per-folder mutex | `fix/export-staging` | in progress |
+| H2 | Quit handshake and job draining, trusted navigation and IPC senders, known-source checks, project schema validation, proxy fingerprint and even sizes | `fix/main-hardening` | in progress |
+| H3 | Pin pnpm version for CI (`packageManager`) | after 5b merge | todo |
+
 ## Wave 3: integration and release
 
 | # | Task | Branch | Status |
@@ -83,3 +91,6 @@ or update path.
 - 2026-10-22: feat/main-wiring merged (137 main tests, 97 AI tests; main/preload/shared type-clean). Orchestrator
   wired the updater into src/main/index.ts and added a trailing flush for throttled job progress.
 - 2026-10-22: feat/editor-preview merged (50 tests). Global Testing Library cleanup added to tests/setup.ts.
+- 2026-10-22: Sol reviewed develop (main side) and reproduced: export temp-file collision/symlink overwrite of the
+  source, replacement failure losing previous outputs, unreliable save on quit, file: navigation trusted, forged
+  project paths, CI pnpm setup. Quit handshake contract added; H1 and H2 started.
