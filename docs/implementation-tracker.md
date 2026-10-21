@@ -20,9 +20,9 @@ or update path.
 | # | Task | Branch | Status |
 | --- | --- | --- | --- |
 | 1 | ASS generation, single-pass trim+burn export, SRT from caption rows, source protection, progress, cancel | `feat/export-ass` | merged |
-| 2 | Transcription with word timestamps (whisper-1), caption builder, speech-detection fallback, strict translation, staged workflow | `feat/ai-transcription` | in progress |
+| 2 | Transcription with word timestamps (whisper-1), caption builder, speech-detection fallback, strict translation, staged workflow | `feat/ai-transcription` | merged |
 | 3 | Renderer project reducer: caption operations, undo/redo, validation, selectors | `feat/renderer-state` | in progress |
-| 4 | Serbian Latin diacritics in all UI strings | `fix/i18n-diacritics` | in progress |
+| 4 | Serbian Latin diacritics in all UI strings | `fix/i18n-diacritics` | merged |
 | 5 | electron-builder packaging, electron-updater, CI and release workflows | `build/packaging-autoupdate` | in progress |
 | 1b | Export follow-up: shared font factor, WrapStyle 2, SAR scaling, re-probe, paused-frame render, ffmpeg capability check | `feat/export-followup` | in progress |
 | 5b | Windows NSIS installer, bundled static ffmpeg/ffprobe for Windows and Linux, CI release matrix (ubuntu + windows) | `build/windows-installer` | todo (after 5) |
@@ -64,3 +64,6 @@ or update path.
   breaks (ASS WrapStyle 2 / CSS pre), CSS stroke 2x outline, SAR folded into probe width, ffmpeg kill settles on
   process close, paused-frame ffmpeg preview IPC, updates require user action (no install on quit).
 - 2026-10-21: feat/export-ass merged (frames verified: text inside frame, Noto Sans, Serbian letters OK). Follow-up 1b started.
+- 2026-10-21: feat/ai-transcription (97 tests) and fix/i18n-diacritics merged. Renderer tests run sequentially
+  (repo is on a bindfs FUSE mount; parallel jsdom workers timed out). Follow-ups noted: i18n plural forms for
+  counts, text-only captions may exceed 6 s.

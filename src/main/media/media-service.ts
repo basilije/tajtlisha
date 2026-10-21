@@ -178,7 +178,8 @@ function audioCodecArgs(format: AudioExtractRequest['format']): string[] {
     case 'wav':
       return ['-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000'];
     case 'mp3':
-      return ['-acodec', 'libmp3lame', '-q:a', '2'];
+      // Speech-only upload for transcription: mono 16 kHz keeps clips far below the 25 MB API limit.
+      return ['-acodec', 'libmp3lame', '-ac', '1', '-ar', '16000', '-b:a', '64k'];
     case 'm4a':
       return ['-acodec', 'aac', '-b:a', '128k'];
   }

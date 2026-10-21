@@ -12,6 +12,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 - Bundled Noto Sans fonts (SIL OFL 1.1) so preview and burned-in export use the same font.
 - Job model for long operations: progress events and cancellation.
 - Auto-update contract (GitHub Releases via electron-updater) and app info IPC.
+- Burned-in export renders a generated ASS file at the video's own resolution with the bundled font; trim and
+  burn happen in one ffmpeg pass; outputs are written to temp files and renamed only when everything succeeded;
+  export refuses to overwrite the source video.
+- Transcription with word timestamps (`whisper-1`), caption building with line/duration limits and balanced
+  lines, and a speech-detection fallback (ffmpeg silencedetect) for models that return text only.
+- Translation and polish validate every caption and retry missing ones once; they never fall back to the source text.
+- UI language "System" follows the OS language (Serbian, Croatian, Bosnian -> Serbian Latin).
+
+### Fixed
+- Serbian Latin UI strings now use proper letters (č, ć, š, ž, đ); Serbian Cyrillic no longer mixes in English words.
+- Audio for transcription is mono 16 kHz 64 kbps MP3, well below the 25 MB API limit.
 
 ### Changed
 - IPC surface reduced to project, workflow, jobs, export, media status, updates and app info.
