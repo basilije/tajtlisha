@@ -1,4 +1,5 @@
 import type { FfmpegStatus } from '../../shared/types/media';
+import { resolveFfmpegPaths } from './paths';
 import { runProcess } from './process';
 
 export type FfmpegRunOptions = {
@@ -20,8 +21,10 @@ export class FfmpegService {
   readonly ffprobePath: string;
 
   constructor(options: FfmpegServiceOptions = {}) {
-    this.ffmpegPath = options.ffmpegPath ?? 'ffmpeg';
-    this.ffprobePath = options.ffprobePath ?? 'ffprobe';
+    // Explicit options win; otherwise env override, then bundled binaries, then PATH (see paths.ts).
+    const resolved = resolveFfmpegPaths();
+    this.ffmpegPath = options.ffmpegPath ?? resolved.ffmpegPath;
+    this.ffprobePath = options.ffprobePath ?? resolved.ffprobePath;
   }
 
   async getStatus(): Promise<FfmpegStatus> {

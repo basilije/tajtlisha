@@ -33,40 +33,103 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 3. `pnpm version X.Y.Z --no-git-tag-version` and commit `chore(release): vX.Y.Z`.
 4. `pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e`.
 5. Merge into `master` (`--no-ff`), tag `vX.Y.Z`, merge `master` back into `develop`.
-6. Push `master`, `develop` and the tag. The release workflow builds the packages and publishes a GitHub
-   Release; installed AppImage builds pick it up through auto-update.
+6. Push `master`, `develop` and the tag. The release workflow builds both platforms and publishes the GitHub
+   Release (see [CI](#ci)). Installed builds pick it up through auto-update.
+7. Smoke-test the published installers on real machines (see [Before a public release](#before-a-public-release)).
 
 ## Auto-update
 
 - Packaged builds use `electron-updater` with the GitHub Releases provider (`blonestar/tajtlisha`).
-- Linux: AppImage updates itself. The `.deb` package does not auto-update (status `unsupported`); users
+- Linux: the AppImage updates itself. The `.deb` package does not auto-update (status `unsupported`); users
   reinstall it from the release page.
-- Windows (later): NSIS installer updates itself.
+- Windows: the NSIS installer updates itself. The update manifest is `latest.yml`, uploaded next to the installer.
 - Development runs (`pnpm dev`) never check for updates.
-- The app checks on startup and from Settings > About. Downloading and installing always need user action.
+- The app checks on startup and from Settings > About. Downloading and installing always need user action;
+  updates are never installed on quit (`autoInstallOnAppQuit` is false).
 
 ## Packaging commands
 
-- `pnpm dist` builds `out/` and then packages Linux (AppImage and deb, x64) into `release/<version>/`. Nothing is published.
-- `pnpm dist:dir` builds an unpacked app in `release/<version>/linux-unpacked/` for quick checks (no installer).
-- `pnpm release:publish` builds and uploads to the GitHub Release for the current `package.json` version. The release
-  workflow runs this on tags `v*`; run it locally only with a `GH_TOKEN` that can write to `blonestar/tajtlisha`.
+Run these from the repository root. Each one fetches the bundled ffmpeg for its platform first (see
+[Bundled ffmpeg](#bundled-ffmpeg)), then builds `out/` with `pnpm build` and packages with electron-builder.
+Nothing is published.
 
-Artifacts in `release/<version>/`:
+| Command | Output in `release/<version>/` |
+| --- | --- |
+| `pnpm dist:linux` | `Tajtlisha-<version>-x86_64.AppImage`, `Tajtlisha-<version>-amd64.deb`, `latest-linux.yml` |
+| `pnpm dist:win` | `Tajtlisha-Setup-<version>.exe`, `latest.yml` |
+| `pnpm dist` | Both of the above |
+| `pnpm dist:dir` | `linux-unpacked/` only, for quick checks |
+| `pnpm fetch:ffmpeg` | Only the bundled ffmpeg into `vendor/ffmpeg/` |
+| `pnpm release:publish` | Linux build uploaded to the GitHub Release for the current version. Needs `GH_TOKEN`; prefer the workflow. |
 
-- `Tajtlisha-<version>-x64.AppImage`: self-updating build.
-- `Tajtlisha-<version>-x64.deb`: no auto-update; users reinstall from the release page.
-- `latest-linux.yml`: update manifest read by electron-updater. Must be uploaded with the AppImage.
+Artifacts per release:
 
-Runtime requirement: the app calls `ffmpeg` and `ffprobe` from the system `PATH`. The deb declares `ffmpeg` as a
-dependency; AppImage users must install ffmpeg themselves (for example `sudo apt install ffmpeg`). Windows builds
-will need a bundled ffmpeg later (not part of the Linux packaging).
+- `Tajtlisha-<version>-x86_64.AppImage`: Linux, self-updating. Contains the bundled ffmpeg.
+- `Tajtlisha-<version>-amd64.deb`: Linux, no auto-update, no ffmpeg dependency (bundled).
+- `Tajtlisha-Setup-<version>.exe`: Windows x64 NSIS installer, self-updating.
+- `*.blockmap` files: used by electron-updater for smaller downloads. Upload them with their installer.
+- `latest-linux.yml` and `latest.yml`: update manifests read by electron-updater. They must be uploaded with the matching installers.
 
-Testing an update locally: auto-update only runs in a packaged AppImage (the `APPIMAGE` env variable must be set),
-so `pnpm dev` never checks. A full end-to-end update needs two published releases; until then, verify the
-`unsupported`/`idle`/`error` states from Settings and the unit tests in `tests/main/local/updater.test.ts`.
-Packaging itself is checked by running `pnpm dist:dir` and starting `release/<version>/linux-unpacked/tajtlisha`.
+The NSIS installer installs per user by default (no administrator rights needed), lets the user change the folder, and
+creates a desktop and a Start menu shortcut named `Tajtlisha`.
 
-CI: `.github/workflows/ci.yml` runs typecheck, tests and build on pushes and pull requests to `develop` and `master`.
-`.github/workflows/release.yml` runs on `v*` tags, fails if the tag does not equal `v` + `package.json` version, and
-publishes the release.
+## Windows
+
+- **Unsigned for now.** Until a code-signing certificate is bought, Windows SmartScreen shows "Windows protected
+  your PC" for the installer. Users choose **More info > Run anyway**. Auto-update still works unsigned.
+  Adding a certificate later only needs `CSC_LINK` / `CSC_KEY_PASSWORD` in the release workflow; nothing in the
+  app changes.
+- Build locally with `pnpm dist:win`. On Linux this needs `wine` (electron-builder uses it to set the icon and
+  version resources in the `.exe`). `build/icon.ico` is generated from `build/icon.png`:
+  `magick build/icon.png -background none -define icon:auto-resize=256,128,64,48,32,16 build/icon.ico`.
+- Wine is good for checking the build: the installer can be extracted, the bundled ffmpeg runs under Wine, and the
+  ASS subtitle filter renders with Windows drive-letter paths. Wine does not prove the installer behaves on Windows.
+  **Before a public release, smoke-test the installer on a real Windows machine:** install, first launch (SmartScreen
+  path), open a video, export SRT and burned-in MP4, check shortcuts, update from the previous version, and uninstall.
+
+## Bundled ffmpeg
+
+Windows has no system ffmpeg, so the app ships its own ffmpeg and ffprobe. Linux ships them too, so the AppImage
+does not depend on the host.
+
+- Source: BtbN/FFmpeg-Builds, release `autobuild-2026-10-21-13-06`, FFmpeg `N-127900-ge2798d5cad`, `gpl-shared`
+  variant. The shared build is about 40% smaller than the static `gpl` build, which repeats the codebase in ffmpeg
+  and ffprobe. Linux installs ~206 MB; Windows ~195 MB.
+- `scripts/fetch-ffmpeg.mjs` downloads the pinned archives, checks their sha256, and writes `vendor/ffmpeg/<platform>-x64/`
+  (gitignored). Each platform folder has `manifest.json`, `LICENSE.txt` and `SOURCE.txt`. Re-running is a no-op.
+- The app finds the bundled binaries in `resources/ffmpeg/` (see `src/main/ffmpeg/paths.ts`). The order is env override
+  (`TAJTLISHA_FFMPEG_PATH` and `TAJTLISHA_FFPROBE_PATH`, both required), then the bundle, then `ffmpeg` on `PATH`.
+- Licensing: the build is GPL-3.0-or-later (`--enable-gpl --enable-version3`, including libx264). Tajtlisha runs
+  ffmpeg and ffprobe as separate programs and does not link them. The packaged app contains `resources/ffmpeg/LICENSE.txt`
+  and `resources/ffmpeg/SOURCE.txt`, which name the exact release and the FFmpeg source. We ship the unmodified upstream
+  build. If we ever patch ffmpeg, we must publish that source with the release.
+- To update ffmpeg: pick a new `autobuild-*` release, update the tag, names and sha256 values in
+  `scripts/fetch-ffmpeg.mjs`, run `pnpm fetch:ffmpeg`, and run `pnpm test:main:local` with the vendored binaries.
+  See `vendor/README.md`.
+
+## CI
+
+- `.github/workflows/ci.yml` runs on pushes and pull requests to `develop` and `master`:
+  - `test` (Linux): typecheck, all tests, build.
+  - `test-windows`: fetches the Windows ffmpeg, puts it on `PATH` and in `TAJTLISHA_*` env vars, then runs typecheck
+    and `pnpm test:main:local`. The real-ffmpeg tests skip when ffmpeg is missing and run here.
+- `.github/workflows/release.yml` runs on `v*` tags:
+  1. `draft`: checks the tag equals `v` + the `package.json` version, then creates a **draft** GitHub Release for the tag
+     (only if none exists yet, so a re-run is safe).
+  2. `build` (matrix): `ubuntu-latest` runs `pnpm dist:linux`; `windows-latest` runs `pnpm dist:win`. Each job checks the
+     tag, builds, and uploads its installers, blockmaps and `latest*.yml` to the draft with `gh release upload --clobber`.
+     Electron-builder does not publish (`--publish never`), so the two jobs cannot create competing releases.
+  3. `publish`: runs after both builds succeed and turns the draft into a public release with `gh release edit --draft=false`.
+     If a build fails, the release stays a draft and nothing is published.
+
+Testing an update locally: auto-update only runs in a packaged build. The AppImage checks only when `APPIMAGE` is set,
+and Windows only in a packaged installed build. `pnpm dev` never checks. A full end-to-end update needs two published
+releases; until then, verify the `unsupported`/`idle`/`error` states from Settings and the unit tests in
+`tests/main/local/updater.test.ts`.
+
+## Before a public release
+
+- `pnpm typecheck` passes, including the renderer. (`pnpm build` runs typecheck first.)
+- Windows installer: smoke-tested on a real Windows machine (see [Windows](#windows)).
+- Linux AppImage: started from a clean machine without ffmpeg installed; export works.
+- The release notes name the bundled ffmpeg version (`ffmpeg -version` from `resources/ffmpeg`).

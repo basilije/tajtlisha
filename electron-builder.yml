@@ -9,9 +9,6 @@ files:
   - '!out/**/*.map'
   - package.json
 asar: true
-extraResources:
-  - from: resources/fonts
-    to: fonts
 artifactName: ${productName}-${version}-${arch}.${ext}
 publish:
   provider: github
@@ -30,17 +27,45 @@ linux:
   synopsis: Subtitles for short MP4 clips
   description: |
     Tajtlisha creates, translates and edits subtitles for short MP4 clips, then exports
-    SRT files or an MP4 with burned-in subtitles. Requires ffmpeg on the system PATH.
+    SRT files or an MP4 with burned-in subtitles. FFmpeg is bundled with the application.
   maintainer: Bojan <blonestar@users.noreply.github.com>
   vendor: Bojan
-deb:
-  depends:
-    - ffmpeg
+  # Bundled ffmpeg from `node scripts/fetch-ffmpeg.mjs` (vendor/README.md) -> resources/ffmpeg, which
+  # src/main/ffmpeg/paths.ts searches. Linux also needs resources/lib for the RPATH $ORIGIN/../lib.
+  # A platform-level extraResources replaces the top-level one, so the fonts entry is repeated per platform.
+  extraResources:
+    - from: resources/fonts
+      to: fonts
+    - from: vendor/ffmpeg/linux-x64/bin
+      to: ffmpeg
+    - from: vendor/ffmpeg/linux-x64/lib
+      to: lib
+    - from: vendor/ffmpeg/linux-x64/LICENSE.txt
+      to: ffmpeg/LICENSE.txt
+    - from: vendor/ffmpeg/linux-x64/SOURCE.txt
+      to: ffmpeg/SOURCE.txt
 win:
   target:
     - target: nsis
       arch:
         - x64
+  icon: build/icon.ico
+  extraResources:
+    - from: resources/fonts
+      to: fonts
+    - from: vendor/ffmpeg/win32-x64/bin
+      to: ffmpeg
+    - from: vendor/ffmpeg/win32-x64/LICENSE.txt
+      to: ffmpeg/LICENSE.txt
+    - from: vendor/ffmpeg/win32-x64/SOURCE.txt
+      to: ffmpeg/SOURCE.txt
 nsis:
   oneClick: false
+  perMachine: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Tajtlisha
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  artifactName: ${productName}-Setup-${version}.${ext}

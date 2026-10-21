@@ -105,7 +105,8 @@ describe('checkFfmpegCapabilities', () => {
 
     expect(capabilities.ffmpeg).toBe(true);
     expect(capabilities.ffprobe).toBe(true);
-    expect(capabilities.version).toMatch(/^\d/);
+    // Release builds print '8.1.3'; the bundled BtbN snapshot prints 'N-127900-g...'.
+    expect(capabilities.version).toMatch(/^(\d|N-)/);
     const flags: Array<[boolean, string]> = [
       [capabilities.ffmpeg, 'ffmpeg'],
       [capabilities.ffprobe, 'ffprobe'],
