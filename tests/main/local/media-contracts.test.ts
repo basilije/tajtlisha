@@ -62,7 +62,7 @@ describe('media contracts', () => {
       '-movflags',
       '+faststart',
       '/tmp/preview.mp4'
-    ]);
+    ], {});
   });
 
   it('trims with output-side seeking and re-encoding for precise boundaries', async () => {
@@ -98,6 +98,6 @@ describe('media contracts', () => {
       '-avoid_negative_ts',
       'make_zero',
       '/tmp/trimmed.mp4'
-    ]);
+    ], {});
   });
 });
