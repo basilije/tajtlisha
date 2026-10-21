@@ -12,6 +12,7 @@
   },
   "main": "out/main/index.js",
   "type": "module",
+  "packageManager": "pnpm@11.10.0",
   "scripts": {
     "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "pnpm typecheck && electron-vite build",

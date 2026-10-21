@@ -26,7 +26,7 @@ or update path.
 | 4 | Serbian Latin diacritics in all UI strings | `fix/i18n-diacritics` | merged |
 | 5 | electron-builder packaging, electron-updater, CI and release workflows | `build/packaging-autoupdate` | merged |
 | 1b | Export follow-up: shared font factor, WrapStyle 2, SAR scaling, re-probe, paused-frame render, ffmpeg capability check | `feat/export-followup` | merged |
-| 5b | Windows NSIS installer, bundled static ffmpeg/ffprobe for Windows and Linux, CI release matrix (ubuntu + windows) | `build/windows-installer` | in progress |
+| 5b | Windows NSIS installer, bundled static ffmpeg/ffprobe for Windows and Linux, CI release matrix (ubuntu + windows) | `build/windows-installer` | merged |
 
 ## Wave 2: wiring and UI parts
 
@@ -42,7 +42,7 @@ or update path.
 | --- | --- | --- | --- |
 | H1 | Export staging dir, destination validation, backup/rollback publish, no-clobber publish, per-folder mutex | `fix/export-staging` | merged |
 | H2 | Quit handshake and job draining, trusted navigation and IPC senders, known-source checks, project schema validation, proxy fingerprint and even sizes | `fix/main-hardening` | merged |
-| H3 | Pin pnpm version for CI (`packageManager`) | after 5b merge | todo |
+| H3 | Pin pnpm version for CI (`packageManager`) | `develop` | merged |
 
 ## Wave 3: integration and release
 
@@ -103,3 +103,7 @@ or update path.
   cleanup), guarded IPC registration with trusted-sender checks, exact-entry navigation, probe-gated loads and a
   known-sources allowlist for ffmpeg inputs, full project schema validation, fingerprinted preview proxies with even
   sizes. Orchestrator: probe floors odd sizes to even (321x241 -> 320x240).
+- 2026-10-22: build/windows-installer merged. Bundled BtbN ffmpeg (autobuild-2026-10-21-13-06, gpl-shared, sha256
+  pinned) for Linux and Windows. Built locally: Tajtlisha-Setup-0.1.0.exe 137 MB (NSIS, latest.yml), AppImage 198 MB,
+  deb 157 MB. Verified: Windows ffmpeg.exe runs under Wine with the ass filter; AppImage ffmpeg loads its own libs
+  via RPATH $ORIGIN/../lib and has libx264/aac/libmp3lame. packageManager pinned to pnpm@11.10.0 for CI.
