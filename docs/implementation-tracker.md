@@ -25,14 +25,14 @@ or update path.
 | 3b | State follow-up: revision in document, stale translations, relink, load result, dirty flag, job context | `feat/renderer-state-followup` | in progress |
 | 4 | Serbian Latin diacritics in all UI strings | `fix/i18n-diacritics` | merged |
 | 5 | electron-builder packaging, electron-updater, CI and release workflows | `build/packaging-autoupdate` | in progress |
-| 1b | Export follow-up: shared font factor, WrapStyle 2, SAR scaling, re-probe, paused-frame render, ffmpeg capability check | `feat/export-followup` | in progress |
+| 1b | Export follow-up: shared font factor, WrapStyle 2, SAR scaling, re-probe, paused-frame render, ffmpeg capability check | `feat/export-followup` | merged |
 | 5b | Windows NSIS installer, bundled static ffmpeg/ffprobe for Windows and Linux, CI release matrix (ubuntu + windows) | `build/windows-installer` | todo (after 5) |
 
 ## Wave 2: wiring and UI parts
 
 | # | Task | Branch | Status |
 | --- | --- | --- | --- |
-| 6 | Main wiring: project store (autosave), job registry, IPC handlers, media protocol | `feat/main-wiring` | todo |
+| 6 | Main wiring: project store (autosave), job registry, IPC handlers, media protocol | `feat/main-wiring` | in progress |
 | 7 | Video preview with style overlay, trim bar, style drawer | `feat/editor-preview` | in progress |
 | 8 | Caption table, generate panel, job bar, export dialog | `feat/editor-captions` | in progress |
 
@@ -70,3 +70,6 @@ or update path.
   counts, text-only captions may exceed 6 s.
 - 2026-10-21: feat/renderer-state merged (139 renderer tests); follow-up 3b started. Design tokens, UI primitives,
   per-area i18n files and timecode utils added on develop. Wave 2 UI workers (7, 8) started.
+- 2026-10-22: feat/export-followup merged (68 main tests; export vs paused-frame preview PSNR 42.6 dB). Found that
+  a 32-character line overflows a 720 px frame: added estimateMaxCharsPerLine (about 20 chars on 720x1280 with the
+  default style); caption building and line_too_long must use effectiveMaxCharsPerLine. feat/main-wiring started.
