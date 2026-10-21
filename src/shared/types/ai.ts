@@ -1,5 +1,3 @@
-import type { SubtitleTrack, TranscriptSegment } from './subtitles';
-
 export type AiProviderId = 'openai' | 'openrouter';
 
 export type AuthMode = 'api_key' | 'codex_auth_experimental';
@@ -34,6 +32,12 @@ export type ProviderModelDescriptor = {
   label: string;
   capability: keyof AiProviderCapabilities;
   available?: boolean;
+  /**
+   * Timing a transcription model returns. 'word' models give per-word times,
+   * 'segment' models give segment times, 'none' models give text only and the
+   * workflow falls back to speech detection. Undefined for non-transcription models.
+   */
+  timestamps?: 'word' | 'segment' | 'none';
 };
 
 export type TestConnectionResult = {
@@ -47,61 +51,4 @@ export type ConnectProviderInput = {
   providerId: AiProviderId;
   authMode: AuthMode;
   secret?: string;
-};
-
-export type TranscriptionRequest = {
-  audioPath: string;
-  audioFormat: 'wav' | 'mp3' | 'm4a';
-  modelId?: string;
-  expectedLanguage?: string;
-  autoDetectLanguage: boolean;
-  clipDurationMs: number;
-};
-
-export type TranscriptionResult = {
-  detectedLanguage: string;
-  text: string;
-  segments: TranscriptSegment[];
-  providerMetadata?: unknown;
-};
-
-export type TranslationRequest = {
-  sourceLanguage: string;
-  targetLanguage: string;
-  modelId?: string;
-  segments: TranscriptSegment[];
-  preserveTiming: true;
-};
-
-export type SubtitlePolishRequest = {
-  track: SubtitleTrack;
-  modelId?: string;
-  mode: 'conservative' | 'social_caption';
-  maxCharsPerLine: number;
-  maxLinesPerCaption: 1 | 2;
-};
-
-export type GenerateSubtitlesRequest = {
-  inputPath: string;
-  knownDurationMs?: number;
-  trim?: {
-    startMs: number;
-    endMs: number;
-    knownDurationMs?: number;
-  };
-  providerId: AiProviderId;
-  transcriptionModelId?: string;
-  textModelId?: string;
-  expectedLanguage?: string;
-  autoDetectLanguage: boolean;
-  targetLanguage: string;
-  polish: boolean;
-  polishMode: SubtitlePolishRequest['mode'];
-  maxCharsPerLine: number;
-  maxLinesPerCaption: 1 | 2;
-};
-
-export type GenerateSubtitlesResult = {
-  originalTrack: SubtitleTrack;
-  translatedTrack: SubtitleTrack;
 };
