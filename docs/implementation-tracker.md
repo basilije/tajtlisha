@@ -19,11 +19,11 @@ or update path.
 
 | # | Task | Branch | Status |
 | --- | --- | --- | --- |
-| 1 | ASS generation, single-pass trim+burn export, SRT from caption rows, source protection, progress, cancel | `feat/export-ass` | todo |
-| 2 | Transcription with word timestamps (whisper-1), caption builder, speech-detection fallback, strict translation, staged workflow | `feat/ai-transcription` | todo |
-| 3 | Renderer project reducer: caption operations, undo/redo, validation, selectors | `feat/renderer-state` | todo |
-| 4 | Serbian Latin diacritics in all UI strings | `fix/i18n-diacritics` | todo |
-| 5 | electron-builder packaging, electron-updater, CI and release workflows | `build/packaging-autoupdate` | todo |
+| 1 | ASS generation, single-pass trim+burn export, SRT from caption rows, source protection, progress, cancel | `feat/export-ass` | in progress |
+| 2 | Transcription with word timestamps (whisper-1), caption builder, speech-detection fallback, strict translation, staged workflow | `feat/ai-transcription` | in progress |
+| 3 | Renderer project reducer: caption operations, undo/redo, validation, selectors | `feat/renderer-state` | in progress |
+| 4 | Serbian Latin diacritics in all UI strings | `fix/i18n-diacritics` | in progress |
+| 5 | electron-builder packaging, electron-updater, CI and release workflows | `build/packaging-autoupdate` | in progress |
 
 ## Wave 2: wiring and UI parts
 
@@ -50,3 +50,4 @@ or update path.
 ## Log
 
 - 2026-10-21: v0.1.0 tagged (baseline skeleton). `develop` created. Wave 0 contracts committed.
+- 2026-10-21: Wave 1 started: five Haiku workers in worktrees under ../Tajtlisha-worktrees/. Sol reviewing contracts.
