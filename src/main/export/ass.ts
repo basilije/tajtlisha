@@ -1,5 +1,5 @@
 import { AppError } from '../../shared/errors';
-import { clamp, computeSubtitleGeometry } from '../../shared/subtitle-geometry';
+import { assFontSize, clamp, computeSubtitleGeometry } from '../../shared/subtitle-geometry';
 import type { SubtitleStyle } from '../../shared/types/style';
 
 export type AssCaption = {
@@ -24,21 +24,6 @@ const ASS_EVENT_FORMAT = 'Layer, Start, End, Style, Name, MarginL, MarginR, Marg
 const SHADOW_ALPHA = '60';
 
 /**
- * ASS Fontsize is not the em size. libass (like VSFilter) scales a font so that
- * usWinAscent + usWinDescent equals Fontsize. Measured on the bundled Noto Sans
- * faces, (1124 + 395) / 1000 = 1.519, so Fontsize 58 renders an em of about 38 px.
- * The factor converts the em-based geometry into the Fontsize that libass needs.
- */
-const WIN_HEIGHT_PER_EM: Readonly<Record<string, number>> = {
-  'Noto Sans': 1.519
-};
-
-/** Fontsize written to the ASS style, so the rendered em equals `fontSizePx`. */
-export function assFontSize(fontSizePx: number, fontFamily: string): number {
-  return fontSizePx * (WIN_HEIGHT_PER_EM[fontFamily] ?? 1);
-}
-
-/**
  * Builds an ASS document whose PlayRes equals the video size. Every pixel value
  * comes from `computeSubtitleGeometry`, the same function the editor preview uses.
  */
@@ -57,7 +42,7 @@ export function buildAssDocument(input: BuildAssDocumentInput): string {
   const styleLine = [
     'Default',
     style.fontFamily.replace(/,/g, ''),
-    `${Math.round(assFontSize(geometry.fontSizePx, style.fontFamily))}`,
+    assFontSize(style, geometry).toFixed(1),
     `&H00${bgrHex(style.textColor)}`,
     '&H000000FF',
     outlineColour,
@@ -93,7 +78,8 @@ export function buildAssDocument(input: BuildAssDocumentInput): string {
     'ScriptType: v4.00+',
     `PlayResX: ${width}`,
     `PlayResY: ${height}`,
-    'WrapStyle: 0',
+    // Explicit '\N' breaks only, matching the CSS preview (white-space: pre).
+    'WrapStyle: 2',
     'ScaledBorderAndShadow: yes',
     'YCbCr Matrix: None',
     '',

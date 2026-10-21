@@ -1,7 +1,12 @@
 /* @vitest-environment node */
 import { describe, expect, it } from 'vitest';
-import { assFontSize, buildAssDocument, escapeAssText, formatAssTimestamp } from '../../../src/main/export/ass';
-import { DEFAULT_SUBTITLE_STYLE, SUBTITLE_PRESETS, computeSubtitleGeometry } from '../../../src/shared/subtitle-geometry';
+import { buildAssDocument, escapeAssText, formatAssTimestamp } from '../../../src/main/export/ass';
+import {
+  DEFAULT_SUBTITLE_STYLE,
+  SUBTITLE_PRESETS,
+  assFontSize,
+  computeSubtitleGeometry
+} from '../../../src/shared/subtitle-geometry';
 import type { SubtitleStyle } from '../../../src/shared/types/style';
 
 describe('ASS document', () => {
@@ -11,7 +16,7 @@ describe('ASS document', () => {
     expect(doc).toContain('ScriptType: v4.00+');
     expect(doc).toContain('PlayResX: 720');
     expect(doc).toContain('PlayResY: 1280');
-    expect(doc).toContain('WrapStyle: 0');
+    expect(doc).toContain('WrapStyle: 2');
     expect(doc).toContain('ScaledBorderAndShadow: yes');
     expect(doc).toContain('YCbCr Matrix: None');
   });
@@ -19,17 +24,20 @@ describe('ASS document', () => {
   it('sizes the font from the shared geometry so the rendered em equals the geometry font size', () => {
     const style = styleLine(buildAssDocument({ captions: [], style: DEFAULT_SUBTITLE_STYLE, videoWidth: 720, videoHeight: 1280 }));
 
-    // Geometry: 4.5% of 1280 = 57.6 px em. libass takes Fontsize as win ascent + descent, so 57.6 * 1.519 = 87.5 -> 87.
+    // Geometry: 4.5% of 1280 = 57.6 px em. libass takes Fontsize as win ascent + descent, so 57.6 * 1.519 = 87.49 -> 87.5 (shared rounding to 0.1).
     expect(computeSubtitleGeometry(DEFAULT_SUBTITLE_STYLE, 720, 1280).fontSizePx).toBeCloseTo(57.6);
-    expect(style.Fontsize).toBe('87');
+    expect(style.Fontsize).toBe('87.5');
     expect(style.Fontname).toBe('Noto Sans');
     expect(style.Encoding).toBe('1');
     expect(style.Name).toBe('Default');
   });
 
-  it('converts the em size to the win-height Fontsize only for known fonts', () => {
-    expect(assFontSize(100, 'Noto Sans')).toBeCloseTo(151.9);
-    expect(assFontSize(100, 'Unknown Sans')).toBe(100);
+  it('uses the shared font factor for the ASS Fontsize', () => {
+    const geometry = computeSubtitleGeometry(DEFAULT_SUBTITLE_STYLE, 720, 1280);
+    expect(assFontSize(DEFAULT_SUBTITLE_STYLE, geometry)).toBeCloseTo(87.5, 0);
+
+    const unknown = { ...DEFAULT_SUBTITLE_STYLE, fontFamily: 'Unknown Sans' };
+    expect(assFontSize(unknown, computeSubtitleGeometry(unknown, 720, 1280))).toBeCloseTo(geometry.fontSizePx * 1.519, 1);
   });
 
   it('converts #rrggbb to ASS &HAABBGGRR', () => {
