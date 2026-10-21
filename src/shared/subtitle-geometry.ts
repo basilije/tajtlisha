@@ -122,3 +122,35 @@ export const SUBTITLE_PRESETS: Record<SubtitlePresetId, SubtitleStyle> = {
     outlineWidthPercent: 11
   }
 };
+
+/**
+ * Average advance width per character as a fraction of the em, measured on
+ * mixed Serbian/English text with the bundled font (Regular 0.461, Bold 0.491),
+ * plus a small margin for capitals and wide letters.
+ */
+const AVERAGE_CHAR_WIDTH_EM = { regular: 0.49, bold: 0.52 } as const;
+
+/**
+ * How many characters fit on one subtitle line for this style and frame.
+ * Captions carry explicit line breaks and are never re-wrapped, so this limit
+ * drives caption building (AI transcription/translation) and the editor's
+ * line_too_long warning. On a 720x1280 vertical clip with the default style it
+ * is about 20; on 1920x1080 it is much larger and the user setting caps it.
+ */
+export function estimateMaxCharsPerLine(style: SubtitleStyle, frameWidth: number, frameHeight: number): number {
+  const geometry = computeSubtitleGeometry(style, frameWidth, frameHeight);
+  const sidePadding = Math.max(geometry.outlinePx, geometry.boxPaddingPx) * 2;
+  const availablePx = Math.max(1, frameWidth) - geometry.marginHorizontalPx * 2 - sidePadding;
+  const charWidthPx = geometry.fontSizePx * (style.bold ? AVERAGE_CHAR_WIDTH_EM.bold : AVERAGE_CHAR_WIDTH_EM.regular);
+  return Math.max(8, Math.min(60, Math.floor(availablePx / charWidthPx)));
+}
+
+/** The effective line limit: the user's setting, but never more than fits the frame. */
+export function effectiveMaxCharsPerLine(
+  settingMaxChars: number,
+  style: SubtitleStyle,
+  frameWidth: number,
+  frameHeight: number
+): number {
+  return Math.min(settingMaxChars, estimateMaxCharsPerLine(style, frameWidth, frameHeight));
+}

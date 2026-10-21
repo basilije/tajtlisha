@@ -169,7 +169,8 @@ function displaySizeOf(stream: FfprobeStream): { width: number; height: number }
   const [sarNum, sarDen] = (stream.sample_aspect_ratio ?? '1:1').split(':').map(Number);
   const sar = sarNum > 0 && sarDen > 0 ? sarNum / sarDen : 1;
   const width = Math.round((stream.width * sar) / 2) * 2;
-  const height = stream.height;
+  // libx264 with yuv420p needs even dimensions.
+  const height = Math.round(stream.height / 2) * 2;
   return rotation === 90 ? { width: height, height: width } : { width, height };
 }
 
