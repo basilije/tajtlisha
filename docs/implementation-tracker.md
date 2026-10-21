@@ -49,7 +49,7 @@ or update path.
 | # | Task | Branch | Status |
 | --- | --- | --- | --- |
 | 9 | Editor page and app shell integration, keyboard shortcuts, quit flush, screenshots | `feat/editor-integration` | in progress |
-| 9b | Settings redesign: sections, provider/model choices with timing badges, export defaults, About with updates and ffmpeg diagnostics | `feat/settings-redesign` | in progress |
+| 9b | Settings redesign: sections, provider/model choices with timing badges, export defaults, About with updates and ffmpeg diagnostics | `feat/settings-redesign` | merged |
 | 10 | Sol review, E2E against a real clip, preview vs export frame comparison | `develop` | todo |
 | 11 | Release v0.2.0 | `release/0.2.0` | todo |
 
@@ -109,3 +109,5 @@ or update path.
   pinned) for Linux and Windows. Built locally: Tajtlisha-Setup-0.1.0.exe 137 MB (NSIS, latest.yml), AppImage 198 MB,
   deb 157 MB. Verified: Windows ffmpeg.exe runs under Wine with the ass filter; AppImage ffmpeg loads its own libs
   via RPATH $ORIGIN/../lib and has libx264/aac/libmp3lame. packageManager pinned to pnpm@11.10.0 for CI.
+- 2026-10-22: feat/settings-redesign merged (43 tests, screenshots reviewed). Orchestrator: settings store treats ''
+  as clearing optional text settings. Open: verify the header close icon in the integrated app.
