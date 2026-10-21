@@ -56,8 +56,23 @@ const api: TajtlishaApi = {
     onState: (listener) => subscribe<UpdateState>(C.updatesState, listener)
   },
   app: {
-    getInfo: () => ipcRenderer.invoke(C.appGetInfo)
+    getInfo: () => ipcRenderer.invoke(C.appGetInfo),
+    onPrepareQuit: (listener) => {
+      quitListeners.add(listener);
+      return () => {
+        quitListeners.delete(listener);
+      };
+    }
   }
 };
+
+// Quit handshake: run every listener (errors must not block quitting), then
+// tell main this request id is ready.
+const quitListeners = new Set<() => Promise<void> | void>();
+ipcRenderer.on(C.appPrepareQuit, (_event, requestId: string) => {
+  void Promise.allSettled([...quitListeners].map((listener) => Promise.resolve().then(listener))).then(() =>
+    ipcRenderer.invoke(C.appQuitReady, requestId)
+  );
+});
 
 contextBridge.exposeInMainWorld('tajtlisha', api);

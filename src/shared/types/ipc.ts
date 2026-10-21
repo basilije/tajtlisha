@@ -65,7 +65,11 @@ export const IPC_CHANNELS = {
   /** main -> renderer event, payload UpdateState */
   updatesState: 'updates:state',
 
-  appGetInfo: 'app:getInfo'
+  appGetInfo: 'app:getInfo',
+  /** main -> renderer event: the app is about to quit; flush pending work. */
+  appPrepareQuit: 'app:prepareQuit',
+  /** renderer -> main invoke: pending work for the given quit request is flushed. */
+  appQuitReady: 'app:quitReady'
 } as const;
 
 export type TajtlishaApi = {
@@ -138,5 +142,13 @@ export type TajtlishaApi = {
   };
   app: {
     getInfo(): Promise<{ version: string; platform: string; isPackaged: boolean }>;
+    /**
+     * Registers the quit handshake. When main is about to quit it notifies the
+     * renderer; the preload awaits every registered listener (e.g. flushing the
+     * pending autosave) and then reports readiness. Main waits for that (with a
+     * timeout), then cancels and drains jobs, cleans temp files and quits.
+     * Returns an unsubscribe function.
+     */
+    onPrepareQuit(listener: () => Promise<void> | void): () => void;
   };
 };
