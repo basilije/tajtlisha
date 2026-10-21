@@ -55,7 +55,7 @@ describe('update service', () => {
       const { autoUpdater, service } = setup();
 
       expect(autoUpdater.autoDownload).toBe(false);
-      expect(autoUpdater.autoInstallOnAppQuit).toBe(true);
+      expect(autoUpdater.autoInstallOnAppQuit).toBe(false);
       expect(service.getState()).toEqual({ status: 'idle', currentVersion: '0.1.0' });
     });
 

@@ -31,7 +31,7 @@ linux:
   description: |
     Tajtlisha creates, translates and edits subtitles for short MP4 clips, then exports
     SRT files or an MP4 with burned-in subtitles. Requires ffmpeg on the system PATH.
-  maintainer: Bojan <5240133+blonestar@users.noreply.github.com>
+  maintainer: Bojan <blonestar@users.noreply.github.com>
   vendor: Bojan
 deb:
   depends:

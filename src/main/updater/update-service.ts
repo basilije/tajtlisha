@@ -68,7 +68,8 @@ export function createUpdateService(options: UpdateServiceOptions): UpdateServic
 
   if (isSupported) {
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
+    // Installing always needs an explicit user action (Settings > Install and restart).
+    autoUpdater.autoInstallOnAppQuit = false;
 
     autoUpdater.on('checking-for-update', () => setState('checking'));
 
