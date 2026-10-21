@@ -1,0 +1,676 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_SUBTITLE_STYLE, SUBTITLE_PRESETS } from '../../../src/shared/subtitle-geometry';
+import type { CaptionRow, ProjectDocument, ProjectSource } from '../../../src/shared/types/project';
+import {
+  COALESCE_WINDOW_MS,
+  HISTORY_LIMIT,
+  createEmptyProject,
+  createProjectState,
+  projectReducer,
+  type ProjectAction,
+  type ProjectState
+} from '../../../src/renderer/src/state/project-reducer';
+
+const source: ProjectSource = {
+  inputPath: '/clips/a.mp4',
+  fileUrl: 'tajtlisha-media://a',
+  durationMs: 10000,
+  width: 1280,
+  height: 720,
+  hasAudio: true
+};
+
+function caption(id: string, startMs: number, endMs: number, original = 'hello', translation = 'zdravo'): CaptionRow {
+  return { id, startMs, endMs, original, translation };
+}
+
+/** A state whose history is empty, so undo tests start from a known point. */
+function stateWith(captions: CaptionRow[] = [], overrides: Partial<ProjectDocument> = {}): ProjectState {
+  const project: ProjectDocument = {
+    ...createEmptyProject({ targetLanguage: 'sr-Latn' }),
+    source,
+    trim: { startMs: 0, endMs: 10000 },
+    captions,
+    ...overrides
+  };
+  return createProjectState(project);
+}
+
+function run(state: ProjectState, ...actions: ProjectAction[]): ProjectState {
+  return actions.reduce((current, action) => projectReducer(current, action), state);
+}
+
+function ids(state: ProjectState): string[] {
+  return state.project.captions.map((item) => item.id);
+}
+
+describe('createEmptyProject', () => {
+  it('creates a schema v1 project with no source and default style', () => {
+    const project = createEmptyProject({ targetLanguage: 'sr-Latn' });
+
+    expect(project.schemaVersion).toBe(1);
+    expect(project.source).toBeNull();
+    expect(project.trim).toEqual({ startMs: 0, endMs: 0 });
+    expect(project.captions).toEqual([]);
+    expect(project.targetLanguage).toBe('sr-Latn');
+    expect(project.previewTrack).toBe('translation');
+    expect(project.style).toEqual(DEFAULT_SUBTITLE_STYLE);
+    expect(project.id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('copies the style so later edits cannot mutate the default', () => {
+    const project = createEmptyProject({ targetLanguage: 'en' });
+    project.style.fontSizePercent = 9;
+
+    expect(DEFAULT_SUBTITLE_STYLE.fontSizePercent).not.toBe(9);
+  });
+});
+
+describe('source and trim', () => {
+  it('source/set sets the whole duration as trim, clears captions and sourceLanguage', () => {
+    const start = run(
+      stateWith([caption('a', 0, 1000)], { sourceLanguage: 'en' }),
+      { type: 'source/set', source: { ...source, durationMs: 5000.4 } }
+    );
+
+    expect(start.project.source?.durationMs).toBe(5000);
+    expect(start.project.trim).toEqual({ startMs: 0, endMs: 5000 });
+    expect(start.project.captions).toEqual([]);
+    expect(start.project.sourceLanguage).toBeUndefined();
+    expect('sourceLanguage' in start.project).toBe(false);
+  });
+
+  it('source/set is undoable', () => {
+    const before = stateWith([caption('a', 0, 1000)]);
+    const after = run(before, { type: 'source/set', source });
+    const undone = run(after, { type: 'history/undo' });
+
+    expect(undone.project.captions).toEqual(before.project.captions);
+  });
+
+  it('source/updateUrl changes the URL without bumping revision or history', () => {
+    const state = stateWith();
+    const next = run(state, { type: 'source/updateUrl', fileUrl: 'tajtlisha-media://fresh' });
+
+    expect(next.project.source?.fileUrl).toBe('tajtlisha-media://fresh');
+    expect(next.revision).toBe(state.revision);
+    expect(next.past).toHaveLength(0);
+  });
+
+  it('source/updateUrl is a no-op without a source or with the same URL', () => {
+    const empty = createProjectState(createEmptyProject({ targetLanguage: 'en' }));
+    expect(projectReducer(empty, { type: 'source/updateUrl', fileUrl: 'x' })).toBe(empty);
+
+    const state = stateWith();
+    expect(projectReducer(state, { type: 'source/updateUrl', fileUrl: source.fileUrl })).toBe(state);
+  });
+
+  it('trim/set clamps to the source duration and rounds', () => {
+    const next = run(stateWith(), { type: 'trim/set', startMs: -500, endMs: 12000.6 });
+
+    expect(next.project.trim).toEqual({ startMs: 0, endMs: 10000 });
+  });
+
+  it('trim/set rejects ranges shorter than 100 ms and inverted ranges', () => {
+    const state = stateWith();
+
+    expect(projectReducer(state, { type: 'trim/set', startMs: 1000, endMs: 1050 })).toBe(state);
+    expect(projectReducer(state, { type: 'trim/set', startMs: 2000, endMs: 1000 })).toBe(state);
+  });
+
+  it('trim/set is a no-op without a source or when unchanged', () => {
+    const empty = createProjectState(createEmptyProject({ targetLanguage: 'en' }));
+    expect(projectReducer(empty, { type: 'trim/set', startMs: 0, endMs: 500 })).toBe(empty);
+
+    const state = stateWith();
+    expect(projectReducer(state, { type: 'trim/set', startMs: 0, endMs: 10000 })).toBe(state);
+  });
+
+  it('trim/set is undoable and bumps revision', () => {
+    const state = stateWith();
+    const next = run(state, { type: 'trim/set', startMs: 1000, endMs: 4000 });
+
+    expect(next.revision).toBe(state.revision + 1);
+    expect(run(next, { type: 'history/undo' }).project.trim).toEqual({ startMs: 0, endMs: 10000 });
+  });
+});
+
+describe('captions bulk operations', () => {
+  it('captions/replaceAll sorts captions and normalizes timing', () => {
+    const next = run(stateWith(), {
+      type: 'captions/replaceAll',
+      captions: [caption('b', 2000.4, 3000), caption('a', -10, 1000.6)],
+      sourceLanguage: 'en'
+    });
+
+    expect(ids(next)).toEqual(['a', 'b']);
+    expect(next.project.captions[0]).toMatchObject({ startMs: 0, endMs: 1001 });
+    expect(next.project.captions[1].startMs).toBe(2000);
+    expect(next.project.sourceLanguage).toBe('en');
+  });
+
+  it('captions/replaceAll keeps the existing sourceLanguage when none is given', () => {
+    const state = stateWith([], { sourceLanguage: 'de' });
+    const next = run(state, { type: 'captions/replaceAll', captions: [caption('a', 0, 500)] });
+
+    expect(next.project.sourceLanguage).toBe('de');
+  });
+
+  it('captions/applyTranslations fills known ids and ignores unknown ones', () => {
+    const state = stateWith([caption('a', 0, 1000, 'one', ''), caption('b', 1000, 2000, 'two', '')]);
+    const next = run(state, {
+      type: 'captions/applyTranslations',
+      translations: [
+        { id: 'a', text: 'jedan' },
+        { id: 'missing', text: 'nope' }
+      ]
+    });
+
+    expect(next.project.captions.map((item) => item.translation)).toEqual(['jedan', '']);
+    expect(next.project.captions[0].original).toBe('one');
+  });
+
+  it('captions/applyTranslations is a no-op when nothing changes', () => {
+    const state = stateWith([caption('a', 0, 1000, 'one', 'jedan')]);
+
+    expect(projectReducer(state, { type: 'captions/applyTranslations', translations: [{ id: 'a', text: 'jedan' }] })).toBe(
+      state
+    );
+  });
+});
+
+describe('caption/update', () => {
+  it('changes timing and re-sorts captions', () => {
+    const state = stateWith([caption('a', 0, 1000), caption('b', 2000, 3000)]);
+    const next = run(state, { type: 'caption/update', id: 'a', patch: { startMs: 2500, endMs: 2600 } });
+
+    expect(ids(next)).toEqual(['b', 'a']);
+  });
+
+  it('rounds and clamps timing values to non-negative integers', () => {
+    const next = run(stateWith([caption('a', 0, 1000)]), {
+      type: 'caption/update',
+      id: 'a',
+      patch: { startMs: -40, endMs: 1234.7 }
+    });
+
+    expect(next.project.captions[0]).toMatchObject({ startMs: 0, endMs: 1235 });
+  });
+
+  it('coalesces consecutive text edits on the same field within the window into one undo step', () => {
+    const base = stateWith([caption('a', 0, 1000, 'hi', '')]);
+    const typed = run(
+      base,
+      { type: 'caption/update', id: 'a', patch: { translation: 'z' }, now: 1000 },
+      { type: 'caption/update', id: 'a', patch: { translation: 'zd' }, now: 1400 },
+      { type: 'caption/update', id: 'a', patch: { translation: 'zdr' }, now: 1400 + COALESCE_WINDOW_MS }
+    );
+
+    expect(typed.past).toHaveLength(1);
+    expect(typed.project.captions[0].translation).toBe('zdr');
+
+    const undone = run(typed, { type: 'history/undo' });
+    expect(undone.project.captions[0].translation).toBe('');
+  });
+
+  it('does not coalesce when the gap exceeds the window', () => {
+    const base = stateWith([caption('a', 0, 1000, 'hi', '')]);
+    const typed = run(
+      base,
+      { type: 'caption/update', id: 'a', patch: { translation: 'z' }, now: 1000 },
+      { type: 'caption/update', id: 'a', patch: { translation: 'zd' }, now: 1000 + COALESCE_WINDOW_MS + 1 }
+    );
+
+    expect(typed.past).toHaveLength(2);
+  });
+
+  it('does not coalesce edits to different fields or to different captions', () => {
+    const base = stateWith([caption('a', 0, 1000, 'hi', ''), caption('b', 1000, 2000, 'yo', '')]);
+    const typed = run(
+      base,
+      { type: 'caption/update', id: 'a', patch: { translation: 'z' }, now: 1000 },
+      { type: 'caption/update', id: 'a', patch: { original: 'ho' }, now: 1100 },
+      { type: 'caption/update', id: 'b', patch: { original: 'yoyo' }, now: 1200 }
+    );
+
+    expect(typed.past).toHaveLength(3);
+  });
+
+  it('timing edits never coalesce', () => {
+    const base = stateWith([caption('a', 0, 1000)]);
+    const moved = run(
+      base,
+      { type: 'caption/update', id: 'a', patch: { startMs: 100 }, now: 1000 },
+      { type: 'caption/update', id: 'a', patch: { startMs: 200 }, now: 1100 }
+    );
+
+    expect(moved.past).toHaveLength(2);
+  });
+
+  it('is a no-op for unknown ids or unchanged values', () => {
+    const state = stateWith([caption('a', 0, 1000)]);
+
+    expect(projectReducer(state, { type: 'caption/update', id: 'zzz', patch: { startMs: 5 } })).toBe(state);
+    expect(projectReducer(state, { type: 'caption/update', id: 'a', patch: { startMs: 0 } })).toBe(state);
+  });
+
+  it('refreshes updatedAt from the provided now', () => {
+    const next = run(stateWith([caption('a', 0, 1000)]), {
+      type: 'caption/update',
+      id: 'a',
+      patch: { startMs: 10 },
+      now: Date.UTC(2026, 0, 2, 3, 4, 5)
+    });
+
+    expect(next.project.updatedAt).toBe('2026-01-02T03:04:05.000Z');
+  });
+});
+
+describe('caption/insert', () => {
+  it('inserts a 2000 ms empty caption in the free gap', () => {
+    const state = stateWith([caption('a', 0, 1000)]);
+    const next = run(state, { type: 'caption/insert', atMs: 3000 });
+
+    expect(next.project.captions).toHaveLength(2);
+    const inserted = next.project.captions[1];
+    expect(inserted).toMatchObject({ startMs: 3000, endMs: 5000, original: '', translation: '' });
+    expect(inserted.id).not.toBe('a');
+  });
+
+  it('shortens the new caption to fit before the next caption', () => {
+    const state = stateWith([caption('a', 3500, 4000)]);
+    const next = run(state, { type: 'caption/insert', atMs: 2000 });
+
+    expect(next.project.captions[0]).toMatchObject({ startMs: 2000, endMs: 3500 });
+  });
+
+  it('honours a custom duration', () => {
+    const next = run(stateWith(), { type: 'caption/insert', atMs: 1000, durationMs: 750 });
+
+    expect(next.project.captions[0]).toMatchObject({ startMs: 1000, endMs: 1750 });
+  });
+
+  it('is a no-op when atMs sits inside a caption', () => {
+    const state = stateWith([caption('a', 0, 1000)]);
+
+    expect(projectReducer(state, { type: 'caption/insert', atMs: 500 })).toBe(state);
+  });
+
+  it('is a no-op when the free room is shorter than 300 ms', () => {
+    const state = stateWith([caption('a', 1100, 2000)]);
+
+    expect(projectReducer(state, { type: 'caption/insert', atMs: 1000 })).toBe(state);
+  });
+
+  it('accepts room of exactly 300 ms', () => {
+    const state = stateWith([caption('a', 1300, 2000)]);
+    const next = run(state, { type: 'caption/insert', atMs: 1000 });
+
+    expect(next.project.captions[0]).toMatchObject({ startMs: 1000, endMs: 1300 });
+  });
+
+  it('is a no-op outside the trim range', () => {
+    const state = stateWith([], { trim: { startMs: 2000, endMs: 6000 } });
+
+    expect(projectReducer(state, { type: 'caption/insert', atMs: 500 })).toBe(state);
+    expect(projectReducer(state, { type: 'caption/insert', atMs: 6000 })).toBe(state);
+  });
+
+  it('is a no-op without a source', () => {
+    const state = createProjectState(createEmptyProject({ targetLanguage: 'en' }));
+
+    expect(projectReducer(state, { type: 'caption/insert', atMs: 0 })).toBe(state);
+  });
+
+  it('is undoable', () => {
+    const state = stateWith();
+    const next = run(state, { type: 'caption/insert', atMs: 1000 });
+
+    expect(run(next, { type: 'history/undo' }).project.captions).toEqual([]);
+  });
+});
+
+describe('caption/split', () => {
+  it('splits timing at atMs and splits both texts at the nearest word boundary', () => {
+    const state = stateWith([caption('a', 0, 4000, 'one two three four', 'jedan dva tri cetiri')]);
+    const next = run(state, { type: 'caption/split', id: 'a', atMs: 1000 });
+
+    expect(next.project.captions).toHaveLength(2);
+    const [first, second] = next.project.captions;
+    expect(first).toMatchObject({ id: 'a', startMs: 0, endMs: 1000, original: 'one', translation: 'jedan' });
+    expect(second).toMatchObject({
+      startMs: 1000,
+      endMs: 4000,
+      original: 'two three four',
+      translation: 'dva tri cetiri'
+    });
+    expect(second.id).not.toBe('a');
+  });
+
+  it('picks the boundary nearest to the same relative position in each text independently', () => {
+    // At 25% of the time: original target is char 5.75 of 23 (after "alpha");
+    // translation target is char 1.75 of 7 (after "x").
+    const state = stateWith([caption('a', 0, 4000, 'alpha beta gamma delta', 'x y z w')]);
+    const next = run(state, { type: 'caption/split', id: 'a', atMs: 1000 });
+
+    expect(next.project.captions[0]).toMatchObject({ original: 'alpha', translation: 'x' });
+    expect(next.project.captions[1]).toMatchObject({ original: 'beta gamma delta', translation: 'y z w' });
+  });
+
+  it('splits when translation is empty, leaving both halves empty', () => {
+    const state = stateWith([caption('a', 0, 4000, 'one two', '')]);
+    const next = run(state, { type: 'caption/split', id: 'a', atMs: 2000 });
+
+    expect(next.project.captions.map((item) => item.translation)).toEqual(['', '']);
+    expect(next.project.captions.map((item) => item.original)).toEqual(['one', 'two']);
+  });
+
+  it('collapses newlines so both halves are single-line', () => {
+    const state = stateWith([caption('a', 0, 4000, 'one\ntwo\nthree', 'jedan\ndva')]);
+    const next = run(state, { type: 'caption/split', id: 'a', atMs: 2000 });
+
+    for (const item of next.project.captions) {
+      expect(item.original).not.toContain('\n');
+      expect(item.translation).not.toContain('\n');
+    }
+    expect(next.project.captions[0].original).toBe('one two');
+  });
+
+  it('keeps a single word in the first half and leaves the second half text empty', () => {
+    const state = stateWith([caption('a', 0, 4000, 'hello', 'zdravo')]);
+    const next = run(state, { type: 'caption/split', id: 'a', atMs: 2000 });
+
+    expect(next.project.captions[0]).toMatchObject({ original: 'hello', translation: 'zdravo' });
+    expect(next.project.captions[1]).toMatchObject({ original: '', translation: '' });
+  });
+
+  it('is a no-op when atMs is at or outside the caption boundaries', () => {
+    const state = stateWith([caption('a', 1000, 2000)]);
+
+    expect(projectReducer(state, { type: 'caption/split', id: 'a', atMs: 1000 })).toBe(state);
+    expect(projectReducer(state, { type: 'caption/split', id: 'a', atMs: 2000 })).toBe(state);
+    expect(projectReducer(state, { type: 'caption/split', id: 'a', atMs: 3000 })).toBe(state);
+    expect(projectReducer(state, { type: 'caption/split', id: 'zzz', atMs: 1500 })).toBe(state);
+  });
+
+  it('keeps captions sorted after the split', () => {
+    const state = stateWith([caption('a', 0, 1000), caption('b', 1000, 2000), caption('c', 2000, 3000)]);
+    const next = run(state, { type: 'caption/split', id: 'a', atMs: 500 });
+
+    expect(next.project.captions.map((item) => item.startMs)).toEqual([0, 500, 1000, 2000]);
+  });
+
+  it('is undoable', () => {
+    const state = stateWith([caption('a', 0, 4000, 'one two', 'jedan dva')]);
+    const next = run(state, { type: 'caption/split', id: 'a', atMs: 2000 });
+
+    expect(run(next, { type: 'history/undo' }).project.captions).toEqual(state.project.captions);
+  });
+});
+
+describe('caption/mergeWithNext', () => {
+  it('joins texts with a space and spans from the first start to the second end', () => {
+    const state = stateWith([caption('a', 0, 1000, 'one', 'jedan'), caption('b', 1200, 2500, 'two', 'dva')]);
+    const next = run(state, { type: 'caption/mergeWithNext', id: 'a' });
+
+    expect(next.project.captions).toEqual([
+      { id: 'a', startMs: 0, endMs: 2500, original: 'one two', translation: 'jedan dva' }
+    ]);
+  });
+
+  it('skips empty sides so no leading or trailing space appears', () => {
+    const state = stateWith([caption('a', 0, 1000, 'one', ''), caption('b', 1000, 2000, '', 'dva')]);
+    const next = run(state, { type: 'caption/mergeWithNext', id: 'a' });
+
+    expect(next.project.captions[0]).toMatchObject({ original: 'one', translation: 'dva' });
+  });
+
+  it('is a no-op on the last row', () => {
+    const state = stateWith([caption('a', 0, 1000), caption('b', 1000, 2000)]);
+
+    expect(projectReducer(state, { type: 'caption/mergeWithNext', id: 'b' })).toBe(state);
+  });
+
+  it('is a no-op for unknown ids', () => {
+    const state = stateWith([caption('a', 0, 1000), caption('b', 1000, 2000)]);
+
+    expect(projectReducer(state, { type: 'caption/mergeWithNext', id: 'zzz' })).toBe(state);
+  });
+});
+
+describe('caption/delete', () => {
+  it('removes the caption and is undoable', () => {
+    const state = stateWith([caption('a', 0, 1000), caption('b', 1000, 2000)]);
+    const next = run(state, { type: 'caption/delete', id: 'a' });
+
+    expect(ids(next)).toEqual(['b']);
+    expect(ids(run(next, { type: 'history/undo' }))).toEqual(['a', 'b']);
+  });
+
+  it('is a no-op for unknown ids', () => {
+    const state = stateWith([caption('a', 0, 1000)]);
+
+    expect(projectReducer(state, { type: 'caption/delete', id: 'zzz' })).toBe(state);
+  });
+});
+
+describe('caption/nudge', () => {
+  it('moves only the start edge', () => {
+    const next = run(stateWith([caption('a', 1000, 2000)]), {
+      type: 'caption/nudge',
+      id: 'a',
+      deltaMs: -300,
+      edge: 'start'
+    });
+
+    expect(next.project.captions[0]).toMatchObject({ startMs: 700, endMs: 2000 });
+  });
+
+  it('moves only the end edge', () => {
+    const next = run(stateWith([caption('a', 1000, 2000)]), {
+      type: 'caption/nudge',
+      id: 'a',
+      deltaMs: 250,
+      edge: 'end'
+    });
+
+    expect(next.project.captions[0]).toMatchObject({ startMs: 1000, endMs: 2250 });
+  });
+
+  it('moves both edges together', () => {
+    const next = run(stateWith([caption('a', 1000, 2000)]), {
+      type: 'caption/nudge',
+      id: 'a',
+      deltaMs: 100,
+      edge: 'both'
+    });
+
+    expect(next.project.captions[0]).toMatchObject({ startMs: 1100, endMs: 2100 });
+  });
+
+  it('clamps start at zero without changing the duration when moving both edges left', () => {
+    const next = run(stateWith([caption('a', 500, 1500)]), {
+      type: 'caption/nudge',
+      id: 'a',
+      deltaMs: -2000,
+      edge: 'both'
+    });
+
+    expect(next.project.captions[0]).toMatchObject({ startMs: 0, endMs: 1000 });
+  });
+
+  it('clamps start and end at zero for single-edge moves', () => {
+    const state = stateWith([caption('a', 500, 1500)]);
+    const startClamped = run(state, { type: 'caption/nudge', id: 'a', deltaMs: -9000, edge: 'start' });
+    const endClamped = run(state, { type: 'caption/nudge', id: 'a', deltaMs: -9000, edge: 'end' });
+
+    expect(startClamped.project.captions[0].startMs).toBe(0);
+    expect(endClamped.project.captions[0].endMs).toBe(0);
+  });
+
+  it('re-sorts when a nudge crosses another caption', () => {
+    const state = stateWith([caption('a', 0, 1000), caption('b', 1500, 2500)]);
+    const next = run(state, { type: 'caption/nudge', id: 'a', deltaMs: 2000, edge: 'both' });
+
+    expect(ids(next)).toEqual(['b', 'a']);
+  });
+
+  it('is a no-op for zero delta or unknown ids', () => {
+    const state = stateWith([caption('a', 0, 1000)]);
+
+    expect(projectReducer(state, { type: 'caption/nudge', id: 'a', deltaMs: 0, edge: 'both' })).toBe(state);
+    expect(projectReducer(state, { type: 'caption/nudge', id: 'zzz', deltaMs: 10, edge: 'both' })).toBe(state);
+  });
+});
+
+describe('style', () => {
+  it('style/set merges the patch and clears presetId when a value really changes', () => {
+    const state = run(stateWith(), { type: 'style/applyPreset', presetId: 'box' });
+    const next = run(state, { type: 'style/set', patch: { position: 'top' } });
+
+    expect(next.project.style.position).toBe('top');
+    expect(next.project.style.presetId).toBeUndefined();
+    expect(next.project.style.backgroundEnabled).toBe(true);
+  });
+
+  it('style/set keeps presetId when the patch matches current values', () => {
+    const state = run(stateWith(), { type: 'style/applyPreset', presetId: 'box' });
+
+    expect(projectReducer(state, { type: 'style/set', patch: { backgroundEnabled: true } })).toBe(state);
+  });
+
+  it('style/applyPreset replaces the style with the preset', () => {
+    const next = run(stateWith(), { type: 'style/applyPreset', presetId: 'bold_yellow' });
+
+    expect(next.project.style).toEqual(SUBTITLE_PRESETS.bold_yellow);
+  });
+
+  it('style/applyPreset is a no-op when the preset is already applied', () => {
+    const state = run(stateWith(), { type: 'style/applyPreset', presetId: 'clean' });
+
+    expect(projectReducer(state, { type: 'style/applyPreset', presetId: 'clean' })).toBe(state);
+  });
+
+  it('style edits are undoable', () => {
+    const state = stateWith();
+    const next = run(state, { type: 'style/set', patch: { fontSizePercent: 7 } });
+
+    expect(run(next, { type: 'history/undo' }).project.style).toEqual(DEFAULT_SUBTITLE_STYLE);
+  });
+});
+
+describe('languages and preview track', () => {
+  it('languages/set updates only the given fields', () => {
+    const next = run(stateWith(), { type: 'languages/set', sourceLanguage: 'en' });
+
+    expect(next.project.sourceLanguage).toBe('en');
+    expect(next.project.targetLanguage).toBe('sr-Latn');
+  });
+
+  it('languages/set is a no-op when nothing changes', () => {
+    const state = stateWith();
+
+    expect(projectReducer(state, { type: 'languages/set', targetLanguage: 'sr-Latn' })).toBe(state);
+  });
+
+  it('previewTrack/set changes the track and is undoable', () => {
+    const state = stateWith();
+    const next = run(state, { type: 'previewTrack/set', track: 'original' });
+
+    expect(next.project.previewTrack).toBe('original');
+    expect(run(next, { type: 'history/undo' }).project.previewTrack).toBe('translation');
+    expect(projectReducer(state, { type: 'previewTrack/set', track: 'translation' })).toBe(state);
+  });
+});
+
+describe('history', () => {
+  it('undo and redo walk back and forth through edits', () => {
+    const state = stateWith();
+    const one = run(state, { type: 'caption/insert', atMs: 0 });
+    const two = run(one, { type: 'caption/insert', atMs: 5000 });
+
+    const undoneOnce = run(two, { type: 'history/undo' });
+    expect(undoneOnce.project.captions).toHaveLength(1);
+
+    const undoneTwice = run(undoneOnce, { type: 'history/undo' });
+    expect(undoneTwice.project.captions).toHaveLength(0);
+
+    const redone = run(undoneTwice, { type: 'history/redo' }, { type: 'history/redo' });
+    expect(redone.project.captions).toHaveLength(2);
+  });
+
+  it('undo and redo on empty stacks return the same state', () => {
+    const state = stateWith();
+
+    expect(projectReducer(state, { type: 'history/undo' })).toBe(state);
+    expect(projectReducer(state, { type: 'history/redo' })).toBe(state);
+  });
+
+  it('a new edit clears the redo stack', () => {
+    const state = stateWith();
+    const edited = run(state, { type: 'caption/insert', atMs: 0 });
+    const undone = run(edited, { type: 'history/undo' });
+    const branched = run(undone, { type: 'caption/insert', atMs: 4000 });
+
+    expect(branched.future).toHaveLength(0);
+  });
+
+  it('caps past history at HISTORY_LIMIT', () => {
+    let state = stateWith();
+    for (let index = 0; index < HISTORY_LIMIT + 5; index += 1) {
+      state = run(state, { type: 'trim/set', startMs: 0, endMs: 9000 + index });
+    }
+
+    expect(state.past).toHaveLength(HISTORY_LIMIT);
+  });
+
+  it('undo keeps the live fileUrl when the snapshot is the same file', () => {
+    const state = stateWith([caption('a', 0, 1000)]);
+    const edited = run(
+      state,
+      { type: 'caption/delete', id: 'a' },
+      { type: 'source/updateUrl', fileUrl: 'tajtlisha-media://fresh' }
+    );
+    const undone = run(edited, { type: 'history/undo' });
+
+    expect(undone.project.captions).toHaveLength(1);
+    expect(undone.project.source?.fileUrl).toBe('tajtlisha-media://fresh');
+  });
+
+  it('project/replace is not undoable, clears history, and bumps revision', () => {
+    const edited = run(stateWith(), { type: 'caption/insert', atMs: 0 });
+    const replaced = run(edited, { type: 'project/replace', project: stateWith().project });
+
+    expect(replaced.past).toHaveLength(0);
+    expect(replaced.future).toHaveLength(0);
+    expect(replaced.revision).toBe(edited.revision + 1);
+    expect(replaced.project.captions).toEqual([]);
+  });
+});
+
+describe('revision and updatedAt', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-03-04T05:06:07.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('increments on every change and not on no-ops', () => {
+    const state = stateWith([caption('a', 0, 1000)]);
+    const changed = run(state, { type: 'caption/delete', id: 'a' });
+    const noop = projectReducer(changed, { type: 'caption/delete', id: 'zzz' });
+
+    expect(changed.revision).toBe(state.revision + 1);
+    expect(noop).toBe(changed);
+    expect(noop.revision).toBe(changed.revision);
+  });
+
+  it('refreshes updatedAt on change', () => {
+    const next = run(stateWith(), { type: 'caption/insert', atMs: 0 });
+
+    expect(next.project.updatedAt).toBe('2026-03-04T05:06:07.000Z');
+  });
+});

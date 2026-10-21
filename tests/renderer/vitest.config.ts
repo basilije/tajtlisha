@@ -10,6 +10,6 @@ export default defineConfig({
     fileParallelism: false,
     globals: true,
     setupFiles: ['./tests/setup.ts'],
-    include: ['tests/renderer/**/*.test.tsx']
+    include: ['tests/renderer/**/*.test.tsx', 'tests/renderer/**/*.test.ts']
   }
 });
