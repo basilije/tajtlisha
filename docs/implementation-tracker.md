@@ -34,7 +34,7 @@ or update path.
 | --- | --- | --- | --- |
 | 6 | Main wiring: project store (autosave), job registry, IPC handlers, media protocol | `feat/main-wiring` | in progress |
 | 7 | Video preview with style overlay, trim bar, style drawer | `feat/editor-preview` | in progress |
-| 8 | Caption table, generate panel, job bar, export dialog | `feat/editor-captions` | in progress |
+| 8 | Caption table, generate panel, job bar, export dialog | `feat/editor-captions` | merged |
 
 ## Wave 3: integration and release
 
@@ -73,3 +73,6 @@ or update path.
 - 2026-10-22: feat/export-followup merged (68 main tests; export vs paused-frame preview PSNR 42.6 dB). Found that
   a 32-character line overflows a 720 px frame: added estimateMaxCharsPerLine (about 20 chars on 720x1280 with the
   default style); caption building and line_too_long must use effectiveMaxCharsPerLine. feat/main-wiring started.
+- 2026-10-22: feat/editor-captions merged (66 tests). The worker ended without committing; the orchestrator verified
+  tests and committed. Fixed an i18n test bug (only the first {{placeholder}} was stripped). Renderer tests now use
+  the vmForks pool (jsdom start exceeded vitest's 60 s worker timeout on the FUSE mount under load).
