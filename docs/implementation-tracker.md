@@ -40,7 +40,7 @@ or update path.
 
 | # | Task | Branch | Status |
 | --- | --- | --- | --- |
-| H1 | Export staging dir, destination validation, backup/rollback publish, no-clobber publish, per-folder mutex | `fix/export-staging` | in progress |
+| H1 | Export staging dir, destination validation, backup/rollback publish, no-clobber publish, per-folder mutex | `fix/export-staging` | merged |
 | H2 | Quit handshake and job draining, trusted navigation and IPC senders, known-source checks, project schema validation, proxy fingerprint and even sizes | `fix/main-hardening` | in progress |
 | H3 | Pin pnpm version for CI (`packageManager`) | after 5b merge | todo |
 
@@ -97,3 +97,5 @@ or update path.
   project paths, CI pnpm setup. Quit handshake contract added; H1 and H2 started.
 - 2026-10-22: feat/renderer-state-followup merged (208 renderer tests); orchestrator fix: the first manual translation
   sets translationLanguage. Wave 3 started: editor integration (9) and settings redesign (9b) in parallel.
+- 2026-10-22: fix/export-staging merged (150 main tests): private staging folder, lstat/realpath destination checks,
+  backup+rollback for overwrite, hard-link no-clobber publish, per-folder lock. Residual: in-process lock only.
