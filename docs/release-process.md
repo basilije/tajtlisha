@@ -39,7 +39,8 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 
 ## Auto-update
 
-- Packaged builds use `electron-updater` with the GitHub Releases provider (`blonestar/tajtlisha`).
+- Packaged builds use `electron-updater` with the GitHub Releases provider (`blonestar/tajtlisha`, a public
+  repository, so installed apps read releases without any token).
 - Linux: the AppImage updates itself. The `.deb` package does not auto-update (status `unsupported`); users
   reinstall it from the release page.
 - Windows: the NSIS installer updates itself. The update manifest is `latest.yml`, uploaded next to the installer.
@@ -48,6 +49,10 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
   updates are never installed on quit (`autoInstallOnAppQuit` is false).
 
 ## Packaging commands
+
+Official installers are built ONLY by the GitHub release workflow (see [CI](#ci)) and are published as assets of
+the GitHub Release for the tag. Nobody builds or uploads release installers from a local machine. The commands below
+exist for debugging packaging problems locally; their output in `release/` is never committed or published.
 
 Run these from the repository root. Each one fetches the bundled ffmpeg for its platform first (see
 [Bundled ffmpeg](#bundled-ffmpeg)), then builds `out/` with `pnpm build` and packages with electron-builder.
@@ -60,7 +65,6 @@ Nothing is published.
 | `pnpm dist` | Both of the above |
 | `pnpm dist:dir` | `linux-unpacked/` only, for quick checks |
 | `pnpm fetch:ffmpeg` | Only the bundled ffmpeg into `vendor/ffmpeg/` |
-| `pnpm release:publish` | Linux build uploaded to the GitHub Release for the current version. Needs `GH_TOKEN`; prefer the workflow. |
 
 Artifacts per release:
 

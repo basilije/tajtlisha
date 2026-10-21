@@ -55,7 +55,9 @@ or update path.
 
 ## Open decisions
 
-- Create GitHub repository `blonestar/tajtlisha` (needed for CI, releases and auto-update). Waiting for the owner.
+- GitHub repository: `blonestar/tajtlisha`, PUBLIC (owner decision 2026-10-22). Installers are built only by the
+  release workflow and attached to the GitHub Release. Before the first push, commit authors are rewritten from the
+  personal email to the GitHub noreply address (owner decision); done after wave 3 merges to avoid stale branches.
 - `whisper-1` (the only OpenAI model with word timestamps) shuts down 2027-02-26. The speech-detection
   fallback keeps the app working after that; revisit when OpenAI documents timestamps for `gpt-transcribe`.
 

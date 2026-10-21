@@ -28,8 +28,7 @@
     "dist": "node scripts/fetch-ffmpeg.mjs --platform all && pnpm build && electron-builder --linux --win nsis --x64 --publish never",
     "dist:linux": "node scripts/fetch-ffmpeg.mjs --platform linux && pnpm build && electron-builder --linux --publish never",
     "dist:win": "node scripts/fetch-ffmpeg.mjs --platform win32 && pnpm build && electron-builder --win nsis --x64 --publish never",
-    "dist:dir": "node scripts/fetch-ffmpeg.mjs --platform linux && pnpm build && electron-builder --linux dir --publish never",
-    "release:publish": "node scripts/fetch-ffmpeg.mjs --platform linux && pnpm build && electron-builder --linux --publish always"
+    "dist:dir": "node scripts/fetch-ffmpeg.mjs --platform linux && pnpm build && electron-builder --linux dir --publish never"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
