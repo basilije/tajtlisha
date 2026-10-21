@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../../src/shared/errors';
 import { IPC_CHANNELS } from '../../../src/shared/types/ipc';
 import { JobRegistry, PROGRESS_THROTTLE_MS, runJob, type JobOwner } from '../../../src/main/jobs/job-registry';
@@ -198,5 +198,33 @@ describe('runJob', () => {
 
     await registry.cancel('job-1', 1);
     await expect(running).rejects.toThrow('[JOB_CANCELED]');
+  });
+
+  it('delivers the last throttled progress value when the window ends', () => {
+    vi.useFakeTimers();
+    try {
+      const clock = fakeClock();
+      const registry = new JobRegistry(clock.now);
+      const owner = fakeOwner(1);
+      const job = registry.start('job-1', owner);
+
+      job.report('rendering_video', 0.5);
+      clock.advance(10);
+      job.report('rendering_video', 0.9);
+      clock.advance(10);
+      job.report('rendering_video', 0.97);
+      expect(owner.sent).toHaveLength(1);
+
+      clock.advance(PROGRESS_THROTTLE_MS);
+      vi.advanceTimersByTime(PROGRESS_THROTTLE_MS);
+      expect(owner.sent.map((message) => (message.payload as { progress?: number }).progress)).toEqual([0.5, 0.97]);
+
+      job.report('rendering_video', 0.99);
+      job.finish();
+      vi.advanceTimersByTime(PROGRESS_THROTTLE_MS);
+      expect(owner.sent).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

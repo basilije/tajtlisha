@@ -20,6 +20,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 - Translation and polish validate every caption and retry missing ones once; they never fall back to the source text.
 - Linux packages (AppImage, deb) built with electron-builder; auto-update for the AppImage through GitHub
   Releases (check on startup and from Settings; download and install only on user action).
+- Projects autosave to the app data folder (one file per project, revision-ordered, atomic writes) and reopen on
+  start; captions survive a moved or deleted video.
+- Export asks Replace / Create copies / Cancel in the UI language when files already exist.
 - GitHub Actions: CI (typecheck, tests, build) and a release workflow for version tags.
 - UI language "System" follows the OS language (Serbian, Croatian, Bosnian -> Serbian Latin).
 

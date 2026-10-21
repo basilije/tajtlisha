@@ -32,7 +32,7 @@ or update path.
 
 | # | Task | Branch | Status |
 | --- | --- | --- | --- |
-| 6 | Main wiring: project store (autosave), job registry, IPC handlers, media protocol | `feat/main-wiring` | in progress |
+| 6 | Main wiring: project store (autosave), job registry, IPC handlers, media protocol | `feat/main-wiring` | merged |
 | 7 | Video preview with style overlay, trim bar, style drawer | `feat/editor-preview` | in progress |
 | 8 | Caption table, generate panel, job bar, export dialog | `feat/editor-captions` | merged |
 
@@ -80,3 +80,5 @@ or update path.
   Orchestrator fixes: autoInstallOnAppQuit false, maintainer uses a GitHub noreply address. pnpm now uses the
   hoisted linker (electron-builder stalled with the isolated one). Updater wiring in src/main/index.ts waits for
   feat/main-wiring. Task 5b (Windows NSIS + bundled ffmpeg) started.
+- 2026-10-22: feat/main-wiring merged (137 main tests, 97 AI tests; main/preload/shared type-clean). Orchestrator
+  wired the updater into src/main/index.ts and added a trailing flush for throttled job progress.

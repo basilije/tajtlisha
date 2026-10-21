@@ -6,11 +6,13 @@ import { SecureCredentialStore } from './credentials/secure-credential-store';
 import { ProjectExportService } from './export';
 import { FfmpegService } from './ffmpeg';
 import { registerAiIpc } from './ipc/ai.ipc';
+import { registerAppIpc } from './ipc/app.ipc';
 import { registerExportIpc } from './ipc/export.ipc';
 import { registerJobsIpc } from './ipc/jobs.ipc';
 import { registerMediaIpc } from './ipc/media.ipc';
 import { registerProjectIpc } from './ipc/project.ipc';
 import { registerSettingsIpc } from './ipc/settings.ipc';
+import { createBroadcast, registerUpdatesIpc } from './ipc/updates.ipc';
 import type { DesktopDialogs, DesktopShell, MessageBoxRequest, OpenDialogRequest } from './ipc/types';
 import { registerWorkflowIpc } from './ipc/workflow.ipc';
 import { mainStringsFor, resolveMainLanguage } from './i18n';
@@ -21,6 +23,7 @@ import { PreviewProxyCache } from './project/preview-proxy-cache';
 import { ProjectStore } from './project/project-store';
 import { bundledFontsDir } from './resources-path';
 import { SettingsStore } from './settings';
+import { createDefaultUpdateService, scheduleStartupCheck } from './updater';
 
 const isDev = Boolean(process.env.ELECTRON_RENDERER_URL);
 const localMediaProtocol = createLocalMediaProtocol();
@@ -132,9 +135,14 @@ app.whenReady().then(async () => {
   registerExportIpc({ ipc: ipcMain, jobs, exporter, dialogs, shell: desktopShell, strings });
   registerMediaIpc({ ipc: ipcMain, ffmpeg });
 
-  // Updater: wired by build/packaging-autoupdate. Its IPC (updates:* and app:getInfo) is registered there.
+  // Auto-update (packaged AppImage / NSIS only; 'unsupported' elsewhere). Never
+  // downloads or installs without a user action.
+  const updateService = createDefaultUpdateService(createBroadcast());
+  registerUpdatesIpc(updateService);
+  registerAppIpc();
 
   createWindow({ jobs, projectStore, previewProxies });
+  scheduleStartupCheck(updateService);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -36,6 +36,9 @@ type JobEntry = {
   controller: AbortController;
   lastStage?: JobStage;
   lastSentAt: number;
+  /** Latest throttled same-stage update, delivered when the throttle window ends. */
+  pending?: JobProgressEvent;
+  pendingTimer?: ReturnType<typeof setTimeout>;
   /** Resolves when the job's finish() runs, i.e. after the work has actually stopped. */
   finished: Promise<void>;
   markFinished: () => void;
@@ -79,6 +82,8 @@ export class JobRegistry {
       finish: () => {
         if (done) return;
         done = true;
+        if (entry.pendingTimer) clearTimeout(entry.pendingTimer);
+        entry.pending = undefined;
         if (jobs.get(jobId) === entry) jobs.delete(jobId);
         if (jobs.size === 0 && this.jobsByOwner.get(owner.id) === jobs) this.jobsByOwner.delete(owner.id);
         entry.markFinished();
@@ -110,11 +115,29 @@ export class JobRegistry {
   private send(jobId: string, entry: JobEntry, stage: JobStage, progress: number | undefined): void {
     const now = this.now();
     const sameStage = stage === entry.lastStage;
-    if (sameStage && now - entry.lastSentAt < PROGRESS_THROTTLE_MS) return;
-
-    entry.lastStage = stage;
-    entry.lastSentAt = now;
     const payload: JobProgressEvent = { jobId, stage, progress };
+    if (sameStage && now - entry.lastSentAt < PROGRESS_THROTTLE_MS) {
+      // Keep the newest value and deliver it when the window ends, so the last
+      // update of a stage (e.g. 97% -> 100%) is never lost.
+      entry.pending = payload;
+      entry.pendingTimer ??= setTimeout(() => {
+        entry.pendingTimer = undefined;
+        const latest = entry.pending;
+        entry.pending = undefined;
+        if (latest && latest.stage === entry.lastStage) this.deliver(entry, latest);
+      }, PROGRESS_THROTTLE_MS - (now - entry.lastSentAt));
+      return;
+    }
+
+    if (entry.pendingTimer) clearTimeout(entry.pendingTimer);
+    entry.pendingTimer = undefined;
+    entry.pending = undefined;
+    this.deliver(entry, payload);
+  }
+
+  private deliver(entry: JobEntry, payload: JobProgressEvent): void {
+    entry.lastStage = payload.stage;
+    entry.lastSentAt = this.now();
     try {
       entry.owner.send(IPC_CHANNELS.jobsProgress, payload);
     } catch {
