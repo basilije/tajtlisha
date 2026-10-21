@@ -1,71 +1,55 @@
-import { ipcMain, type IpcMainInvokeEvent } from 'electron';
-import type {
-  AiProviderCapabilities,
-  AiProviderId,
-  ConnectProviderInput,
-  GenerateSubtitlesRequest,
-  SubtitlePolishRequest,
-  TranscriptionRequest,
-  TranslationRequest
-} from '../../shared/types/ai';
-import { createDefaultAiProviderRegistry, SubtitleWorkflowService, type AiProviderRegistry } from '../ai';
+import type { AiProviderCapabilities, AuthMode, ConnectProviderInput } from '../../shared/types/ai';
+import { IPC_CHANNELS } from '../../shared/types/ipc';
+import type { AiProviderRegistry } from '../ai';
+import { requireOneOf, requireProviderId, requireRecord, requireString } from './validation';
+import type { IpcRegistrar } from './types';
 
-export const aiIpcChannels = {
-  listProviders: 'ai:listProviders',
-  getProviderStatus: 'ai:getProviderStatus',
-  connectProvider: 'ai:connectProvider',
-  disconnectProvider: 'ai:disconnectProvider',
-  testConnection: 'ai:testConnection',
-  listModels: 'ai:listModels',
-  transcribe: 'ai:transcribe',
-  translate: 'ai:translate',
-  polishSubtitles: 'ai:polishSubtitles',
-  generateSubtitles: 'ai:generateSubtitles'
-} as const;
+export type AiIpcDeps = {
+  ipc: IpcRegistrar;
+  registry: Pick<
+    AiProviderRegistry,
+    'listProviders' | 'getProviderStatus' | 'connectProvider' | 'disconnectProvider' | 'testConnection' | 'listModels'
+  >;
+};
 
-export function registerAiIpc(
-  registry: AiProviderRegistry = createDefaultAiProviderRegistry(),
-  subtitleWorkflowService = new SubtitleWorkflowService(registry)
-): void {
-  ipcMain.handle(aiIpcChannels.listProviders, () => registry.listProviders());
+const AUTH_MODES: readonly AuthMode[] = ['api_key', 'codex_auth_experimental'];
+const CAPABILITIES: ReadonlyArray<keyof AiProviderCapabilities> = [
+  'detectLanguage',
+  'transcription',
+  'segmentTimestamps',
+  'wordTimestamps',
+  'translation',
+  'subtitlePolish',
+  'textToSpeech'
+];
 
-  ipcMain.handle(aiIpcChannels.getProviderStatus, (_event: IpcMainInvokeEvent, providerId: AiProviderId) =>
-    registry.getProviderStatus(providerId)
+export function registerAiIpc({ ipc, registry }: AiIpcDeps): void {
+  ipc.handle(IPC_CHANNELS.aiListProviders, () => registry.listProviders());
+
+  ipc.handle(IPC_CHANNELS.aiGetProviderStatus, (_event, providerId: unknown) =>
+    registry.getProviderStatus(requireProviderId(providerId))
   );
 
-  ipcMain.handle(aiIpcChannels.connectProvider, (_event: IpcMainInvokeEvent, input: ConnectProviderInput) =>
-    registry.connectProvider(input)
+  ipc.handle(IPC_CHANNELS.aiConnectProvider, (_event, payload: unknown) => registry.connectProvider(toConnectInput(payload)));
+
+  ipc.handle(IPC_CHANNELS.aiDisconnectProvider, (_event, providerId: unknown) =>
+    registry.disconnectProvider(requireProviderId(providerId))
   );
 
-  ipcMain.handle(aiIpcChannels.disconnectProvider, (_event: IpcMainInvokeEvent, providerId: AiProviderId) =>
-    registry.disconnectProvider(providerId)
-  );
+  ipc.handle(IPC_CHANNELS.aiTestConnection, (_event, providerId: unknown) => registry.testConnection(requireProviderId(providerId)));
 
-  ipcMain.handle(aiIpcChannels.testConnection, (_event: IpcMainInvokeEvent, providerId: AiProviderId) =>
-    registry.testConnection(providerId)
+  ipc.handle(IPC_CHANNELS.aiListModels, (_event, providerId: unknown, capability: unknown) =>
+    registry.listModels(requireProviderId(providerId), requireOneOf(capability, CAPABILITIES, 'capability'))
   );
+}
 
-  ipcMain.handle(
-    aiIpcChannels.listModels,
-    (_event: IpcMainInvokeEvent, providerId: AiProviderId, capability: keyof AiProviderCapabilities) =>
-      registry.listModels(providerId, capability)
-  );
-
-  ipcMain.handle(aiIpcChannels.transcribe, (_event: IpcMainInvokeEvent, providerId: AiProviderId, request: TranscriptionRequest) =>
-    registry.transcribe(providerId, request)
-  );
-
-  ipcMain.handle(aiIpcChannels.translate, (_event: IpcMainInvokeEvent, providerId: AiProviderId, request: TranslationRequest) =>
-    registry.translate(providerId, request)
-  );
-
-  ipcMain.handle(
-    aiIpcChannels.polishSubtitles,
-    (_event: IpcMainInvokeEvent, providerId: AiProviderId, request: SubtitlePolishRequest) =>
-      registry.polishSubtitles(providerId, request)
-  );
-
-  ipcMain.handle(aiIpcChannels.generateSubtitles, (_event: IpcMainInvokeEvent, request: GenerateSubtitlesRequest) =>
-    subtitleWorkflowService.generateSubtitles(request)
-  );
+function toConnectInput(payload: unknown): ConnectProviderInput {
+  const input = requireRecord(payload, 'input');
+  const providerId = requireProviderId(input.providerId);
+  const authMode = requireOneOf(input.authMode, AUTH_MODES, 'authMode');
+  // The secret goes straight to the credential store and is never echoed or logged.
+  if (input.secret === undefined) {
+    return { providerId, authMode };
+  }
+  return { providerId, authMode, secret: requireString(input.secret, 'secret') };
 }
