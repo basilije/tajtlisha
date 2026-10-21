@@ -6,7 +6,12 @@ import type { SubtitleStyle } from './style';
  * Long-running operations (AI, ffmpeg) are identified by a renderer-generated
  * jobId. The renderer can cancel a job with jobs.cancel(jobId) and receives
  * progress through jobs.onProgress. A canceled job rejects with an error whose
- * message starts with '[JOB_CANCELED]'.
+ * message contains '[JOB_CANCELED]'. Job ids are scoped to the invoking window;
+ * main rejects duplicate active ids and cancels a window's jobs when it closes.
+ * Cancellation resolves only after the child process has exited.
+ *
+ * Stale results: the renderer captures project id + revision when starting a
+ * job and applies the result only if they still match (see useJobRunner).
  */
 export type JobStage =
   | 'extracting_audio'
@@ -88,6 +93,11 @@ export type ProjectExportRequest = {
   targetLanguage: string;
   style: SubtitleStyle;
   outputs: ExportOutputs;
+  /**
+   * 'ask': when outputs exist, MAIN shows a native dialog (Replace / Create
+   * copies / Cancel) and continues; the renderer never parses conflict paths.
+   * Cancel rejects with EXPORT_CANCELED.
+   */
   overwritePolicy: 'ask' | 'overwrite' | 'create_copy';
 };
 

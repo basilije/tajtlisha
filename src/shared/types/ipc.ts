@@ -18,7 +18,8 @@ import type {
   TranslateCaptionsResult
 } from './jobs';
 import type { FfmpegStatus } from './media';
-import type { ProjectDocument, ProjectSource } from './project';
+import type { ProjectDocument, ProjectLoadResult, ProjectSource } from './project';
+import type { SubtitleStyle } from './style';
 import type { AppSettings } from './settings';
 import type { UpdateState } from './updates';
 
@@ -42,6 +43,7 @@ export const IPC_CHANNELS = {
   projectLoadLast: 'project:loadLast',
   projectSave: 'project:save',
   projectCreatePreviewProxy: 'project:createPreviewProxy',
+  projectRenderPreviewFrame: 'project:renderPreviewFrame',
 
   workflowTranscribe: 'workflow:transcribe',
   workflowTranslate: 'workflow:translate',
@@ -83,12 +85,31 @@ export type TajtlishaApi = {
   project: {
     /** Opens a file dialog and probes the video. Null when canceled. */
     selectVideo(): Promise<ProjectSource | null>;
-    /** Last autosaved project with a fresh fileUrl, or null (none saved / source file missing). */
-    loadLast(): Promise<ProjectDocument | null>;
-    /** Persists the project (autosave). fileUrl is not trusted on load. */
-    save(project: ProjectDocument): Promise<void>;
-    /** Transcodes an H.264 preview for files Chromium cannot decode. Returns a playable URL. */
-    createPreviewProxy(inputPath: string): Promise<{ fileUrl: string }>;
+    /**
+     * Last opened project, or null when none was saved. Returned even when the
+     * source video is missing so captions are never lost (relink via selectVideo).
+     */
+    loadLast(): Promise<ProjectLoadResult | null>;
+    /**
+     * Persists the project to userData/projects/<id>.json (temp file + rename),
+     * serialized in main. Saves older than the last saved revision are ignored.
+     * Resolves with the revision that is on disk after the call.
+     */
+    save(project: ProjectDocument): Promise<{ savedRevision: number }>;
+    /** Transcodes an H.264 preview for files Chromium cannot decode. Cancellable via jobs.cancel(jobId). */
+    createPreviewProxy(request: { jobId: string; inputPath: string }): Promise<{ fileUrl: string }>;
+    /**
+     * Renders one frame of the source at `atMs` with the exact export ASS
+     * pipeline (pixel-accurate preview). Returns a PNG data URL.
+     */
+    renderPreviewFrame(request: {
+      inputPath: string;
+      atMs: number;
+      videoWidth: number;
+      videoHeight: number;
+      text: string;
+      style: SubtitleStyle;
+    }): Promise<{ dataUrl: string }>;
   };
   workflow: {
     transcribe(request: TranscribeClipRequest): Promise<TranscribeClipResult>;

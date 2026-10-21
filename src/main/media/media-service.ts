@@ -13,6 +13,7 @@ type FfprobeStream = {
   codec_type?: string;
   width?: number;
   height?: number;
+  sample_aspect_ratio?: string;
   tags?: { rotate?: string };
   side_data_list?: Array<{ rotation?: number }>;
 };
@@ -72,9 +73,9 @@ export class MediaService {
       '-y',
       '-i',
       input.inputPath,
-      // Input-side seeking with stream copy is keyframe-boundary based. Keep
-      // seeking after the input and re-encode A/V so the requested boundaries
-      // are frame/sample accurate.
+      // Output-side seeking (after -i) with re-encoding. Input-side seeking is
+      // also frame accurate when transcoding (ffmpeg decodes and discards up to
+      // the seek point); it is only keyframe-bound with stream copy.
       '-ss',
       millisecondsToSeconds(input.startMs),
       '-t',
@@ -163,7 +164,13 @@ function displaySizeOf(stream: FfprobeStream): { width: number; height: number }
   if (!stream.width || !stream.height) return undefined;
   const sideRotation = stream.side_data_list?.find((entry) => typeof entry.rotation === 'number')?.rotation;
   const rotation = Math.abs(Number(sideRotation ?? stream.tags?.rotate ?? 0)) % 180;
-  return rotation === 90 ? { width: stream.height, height: stream.width } : { width: stream.width, height: stream.height };
+  // Anamorphic video: fold the sample aspect ratio into the width so the size
+  // is in square pixels (export scales to this size before drawing subtitles).
+  const [sarNum, sarDen] = (stream.sample_aspect_ratio ?? '1:1').split(':').map(Number);
+  const sar = sarNum > 0 && sarDen > 0 ? sarNum / sarDen : 1;
+  const width = Math.round((stream.width * sar) / 2) * 2;
+  const height = stream.height;
+  return rotation === 90 ? { width: height, height: width } : { width, height };
 }
 
 function audioCodecArgs(format: AudioExtractRequest['format']): string[] {

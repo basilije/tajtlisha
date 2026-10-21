@@ -29,7 +29,8 @@ const api: TajtlishaApi = {
     selectVideo: () => ipcRenderer.invoke(C.projectSelectVideo),
     loadLast: () => ipcRenderer.invoke(C.projectLoadLast),
     save: (project) => ipcRenderer.invoke(C.projectSave, project),
-    createPreviewProxy: (inputPath) => ipcRenderer.invoke(C.projectCreatePreviewProxy, inputPath)
+    createPreviewProxy: (request) => ipcRenderer.invoke(C.projectCreatePreviewProxy, request),
+    renderPreviewFrame: (request) => ipcRenderer.invoke(C.projectRenderPreviewFrame, request)
   },
   workflow: {
     transcribe: (request) => ipcRenderer.invoke(C.workflowTranscribe, request),

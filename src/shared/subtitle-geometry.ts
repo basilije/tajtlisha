@@ -4,10 +4,30 @@ import type { SubtitlePresetId, SubtitleStyle } from './types/style';
  * Single source of truth for subtitle layout. Both the renderer preview (CSS)
  * and the ASS export call this with the frame size they render into, so the
  * text keeps the same proportions on screen and in the exported video.
+ *
+ * Rendering rules both sides must follow (verified against libass by Sol):
+ * - `fontSizePx` is the CSS em size. libass sizes fonts by the Windows
+ *   ascent+descent instead of the em box, so the ASS Fontsize must be
+ *   `fontSizePx * ASS_FONT_SIZE_FACTOR[family]` (see assFontSize()).
+ * - Line height in CSS is `lineHeightPx` (= the libass line metric).
+ * - ASS Outline grows outward by `outlinePx`; CSS -webkit-text-stroke is
+ *   centered on the glyph path, so CSS uses `cssStrokeWidthPx` (2x) with
+ *   `paint-order: stroke fill`.
+ * - Shadow: equal x/y offset `shadowPx`, no blur, on both sides.
+ * - No automatic wrapping: captions carry explicit '\n' line breaks. ASS uses
+ *   WrapStyle 2, CSS uses `white-space: pre`. Lines that do not fit are
+ *   flagged in the editor (line_too_long) instead of being re-wrapped.
+ * - The background box (ASS BorderStyle 3) is drawn per line around the line
+ *   metrics; CSS approximates it with `box-decoration-break: clone` padding.
+ * - Pixel-exact checks use the paused-frame preview rendered by ffmpeg.
  */
 export type SubtitleGeometry = {
-  /** Font size in pixels of the given frame. */
+  /** CSS font size (em) in pixels of the given frame. */
   fontSizePx: number;
+  /** Line advance in pixels (libass line metric for the bundled font). */
+  lineHeightPx: number;
+  /** -webkit-text-stroke width for the CSS preview (twice outlinePx). */
+  cssStrokeWidthPx: number;
   /** Outline thickness in pixels (0 when disabled or when the box is enabled). */
   outlinePx: number;
   /** Shadow offset in pixels (0 when disabled). */
@@ -20,6 +40,23 @@ export type SubtitleGeometry = {
   marginHorizontalPx: number;
 };
 
+/**
+ * libass Fontsize / CSS font-size for each bundled family. Noto Sans:
+ * unitsPerEm 1000, OS/2 usWinAscent 1124 + usWinDescent 395 = 1519.
+ */
+export const ASS_FONT_SIZE_FACTOR: Record<string, number> = {
+  'Noto Sans': 1.519
+};
+
+export function fontMetricFactor(fontFamily: string): number {
+  return ASS_FONT_SIZE_FACTOR[fontFamily] ?? ASS_FONT_SIZE_FACTOR['Noto Sans'];
+}
+
+/** ASS `Fontsize` value that renders the same glyph size as CSS `fontSizePx`. */
+export function assFontSize(style: SubtitleStyle, geometry: SubtitleGeometry): number {
+  return Math.round(geometry.fontSizePx * fontMetricFactor(style.fontFamily) * 10) / 10;
+}
+
 export function computeSubtitleGeometry(style: SubtitleStyle, frameWidth: number, frameHeight: number): SubtitleGeometry {
   const width = Math.max(1, frameWidth);
   const height = Math.max(1, frameHeight);
@@ -29,6 +66,8 @@ export function computeSubtitleGeometry(style: SubtitleStyle, frameWidth: number
 
   return {
     fontSizePx,
+    lineHeightPx: fontSizePx * fontMetricFactor(style.fontFamily),
+    cssStrokeWidthPx: outlinePx * 2,
     outlinePx,
     shadowPx: style.shadowEnabled ? fontSizePx * 0.06 : 0,
     boxPaddingPx: style.backgroundEnabled ? fontSizePx * 0.18 : 0,

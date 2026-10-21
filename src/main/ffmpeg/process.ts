@@ -27,6 +27,10 @@ export function runProcess(command: string, args: string[], options: RunProcessO
     let pendingLine = '';
     let settled = false;
 
+    // When we kill the process we remember why, but only settle on 'close' so
+    // callers never clean up temp files while ffmpeg is still writing them.
+    let killReason: Error | null = null;
+
     const finish = (error: Error | null, result?: RunProcessResult): void => {
       if (settled) return;
       settled = true;
@@ -36,17 +40,17 @@ export function runProcess(command: string, args: string[], options: RunProcessO
       else resolve(result as RunProcessResult);
     };
 
-    const onAbort = (): void => {
+    const killWith = (reason: Error): void => {
+      if (killReason) return;
+      killReason = reason;
       child.kill('SIGKILL');
-      finish(new AppError('JOB_CANCELED'));
     };
+
+    const onAbort = (): void => killWith(new AppError('JOB_CANCELED'));
     options.signal?.addEventListener('abort', onAbort, { once: true });
 
     const timeout = options.timeoutMs
-      ? setTimeout(() => {
-          child.kill('SIGKILL');
-          finish(new Error(`${command} timed out after ${options.timeoutMs}ms`));
-        }, options.timeoutMs)
+      ? setTimeout(() => killWith(new Error(`${command} timed out after ${options.timeoutMs}ms`)), options.timeoutMs)
       : undefined;
 
     child.stdout.on('data', (chunk: Buffer) => {
@@ -63,6 +67,10 @@ export function runProcess(command: string, args: string[], options: RunProcessO
       finish(error.code === 'ENOENT' ? new AppError('FFMPEG_MISSING', `${command} was not found on PATH.`) : error);
     });
     child.on('close', (code) => {
+      if (killReason) {
+        finish(killReason);
+        return;
+      }
       const stdout = Buffer.concat(stdoutChunks).toString('utf8');
       const stderr = Buffer.concat(stderrChunks).toString('utf8');
       if (code === 0) {

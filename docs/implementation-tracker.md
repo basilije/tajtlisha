@@ -57,3 +57,8 @@ or update path.
 - 2026-10-21: v0.1.0 tagged (baseline skeleton). `develop` created. Wave 0 contracts committed.
 - 2026-10-21: Wave 1 started: five Haiku workers in worktrees under ../Tajtlisha-worktrees/. Sol reviewing contracts.
 - 2026-10-21: Owner asked for Windows and Linux installers. Added task 5b (bundled ffmpeg, NSIS, CI matrix).
+- 2026-10-21: Sol contract review applied on develop: project revision + translatedFrom/translationLanguage
+  (stale translations are marked, not cleared), load result with sourceStatus (missing/changed source keeps
+  captions), per-project save files with revision ordering, ASS font factor 1.519 for Noto Sans, explicit line
+  breaks (ASS WrapStyle 2 / CSS pre), CSS stroke 2x outline, SAR folded into probe width, ffmpeg kill settles on
+  process close, paused-frame ffmpeg preview IPC, updates require user action (no install on quit).

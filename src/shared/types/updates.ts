@@ -1,7 +1,10 @@
 /**
  * Auto-update state shown in Settings. Updates come from GitHub Releases via
  * electron-updater and only work in packaged builds (AppImage on Linux, NSIS on
- * Windows). In development and in .deb installs the status is 'unsupported'.
+ * Windows). In development, and for .deb installs (disabled by Tajtlisha policy;
+ * users reinstall the package), the status is 'unsupported'. Downloading and
+ * installing always require a user action: autoDownload and
+ * autoInstallOnAppQuit are both false.
  */
 export type UpdateStatus =
   | 'unsupported'
