@@ -1,0 +1,408 @@
+/*
+ * Video preview, trim bar and style drawer. Colors, spacing and type come from
+ * tokens.css; primitives (buttons, fields, panels, segmented) come from ui.css.
+ */
+
+/* ---- Video preview ---- */
+
+.video-preview {
+  background: var(--bg);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+.video-preview-empty {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  padding: var(--space-4);
+  text-align: center;
+}
+.video-preview-stage {
+  align-items: center;
+  display: grid;
+  justify-items: center;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--space-3);
+}
+/* Letterbox behind the video. This is video content, not UI chrome. */
+.video-preview-frame {
+  background: #000;
+  position: relative;
+}
+.video-preview-video {
+  display: block;
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+/* Subtitle layer: covers exactly the displayed frame and clips overflow. */
+.subtitle-overlay {
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+}
+.subtitle-block {
+  position: absolute;
+}
+.subtitle-text {
+  display: inline;
+}
+
+/* Exact frame: a rendered still of the frame, shown in the same box. */
+.exact-frame-image {
+  display: block;
+  height: 100%;
+  inset: 0;
+  object-fit: fill;
+  position: absolute;
+  width: 100%;
+}
+.exact-frame-bar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  left: var(--space-2);
+  position: absolute;
+  right: var(--space-2);
+  top: var(--space-2);
+}
+
+.video-preview-transport {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+.video-preview-time {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  line-height: 1.2;
+  min-width: 0;
+}
+.video-preview-time .mono {
+  font-size: var(--text-md);
+}
+.video-preview-source {
+  font-size: var(--text-xs);
+}
+
+/* ---- Trim bar ---- */
+
+.trim-bar {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+.trim-ruler {
+  height: 16px;
+  position: relative;
+}
+.trim-tick {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.trim-tick:first-child {
+  transform: none;
+}
+.trim-track {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+  height: 48px;
+  position: relative;
+  touch-action: none;
+  user-select: none;
+}
+.trim-dim {
+  background: rgba(0, 0, 0, 0.55);
+  bottom: 0;
+  position: absolute;
+  top: 0;
+}
+.trim-playhead {
+  background: var(--text);
+  bottom: 0;
+  margin-left: -1px;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 2px;
+}
+.trim-handle {
+  background: var(--accent);
+  border-radius: 3px;
+  bottom: 0;
+  cursor: ew-resize;
+  margin-left: -6px;
+  position: absolute;
+  top: 0;
+  width: 12px;
+}
+.trim-handle:hover {
+  background: var(--accent-hover);
+}
+.trim-caption {
+  background: var(--track-original);
+  border: 0;
+  border-radius: 2px;
+  bottom: 6px;
+  cursor: pointer;
+  height: 14px;
+  min-width: 3px;
+  padding: 0;
+  position: absolute;
+}
+.trim-caption.is-issue {
+  background: var(--danger);
+}
+.trim-caption[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--text);
+}
+.trim-controls {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+.trim-timecode {
+  width: 132px;
+}
+.trim-kept-duration {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+/* ---- Style drawer ---- */
+
+.style-drawer {
+  align-content: start;
+  display: grid;
+  min-width: 0;
+}
+.style-drawer-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  width: 100%;
+}
+.style-drawer-body {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.style-presets {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.style-preset {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: grid;
+  font-size: var(--text-xs);
+  gap: var(--space-1);
+  justify-items: center;
+  min-width: 0;
+  padding: var(--space-2);
+}
+.style-preset:hover {
+  color: var(--text);
+}
+.style-preset[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.preset-sample {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  white-space: pre;
+}
+.style-grid {
+  display: grid;
+  gap: var(--space-2) var(--space-3);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.style-span {
+  grid-column: 1 / -1;
+}
+.style-font-size {
+  align-items: end;
+  display: grid;
+  gap: var(--space-3);
+  grid-column: 1 / -1;
+  grid-template-columns: 96px minmax(0, 1fr);
+}
+.style-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: grid;
+  gap: var(--space-2) var(--space-3);
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  padding: var(--space-2) var(--space-3);
+}
+.style-hint {
+  font-size: var(--text-xs);
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.style-number {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.style-number .input {
+  width: 100%;
+}
+.style-switch {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+  min-width: 0;
+}
+.style-switch label {
+  font-size: var(--text-sm);
+}
+.style-color {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+  min-width: 0;
+}
+.style-color .field-label {
+  font-size: var(--text-sm);
+}
+.style-segment {
+  display: grid;
+  gap: var(--space-1);
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.style-segment .segmented {
+  display: flex;
+}
+.style-segment .segmented button {
+  flex: 1;
+}
+
+.switch {
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  flex: none;
+  height: 18px;
+  padding: 0;
+  position: relative;
+  width: 32px;
+}
+.switch[data-state='checked'] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.switch-thumb {
+  background: var(--text);
+  border-radius: 999px;
+  display: block;
+  height: 12px;
+  transform: translateX(2px);
+  transition: transform 120ms ease;
+  width: 12px;
+}
+.switch-thumb[data-state='checked'] {
+  background: var(--accent-text);
+  transform: translateX(16px);
+}
+
+.color-input {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+  flex: none;
+  height: var(--control-height);
+  padding: 2px;
+  width: 40px;
+}
+.color-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.color-input::-webkit-color-swatch {
+  border: 0;
+  border-radius: var(--radius-sm);
+}
+
+.slider {
+  align-items: center;
+  display: flex;
+  height: 20px;
+  position: relative;
+  touch-action: none;
+  user-select: none;
+  width: 100%;
+}
+.slider-track {
+  background: var(--surface-3);
+  border-radius: 999px;
+  flex-grow: 1;
+  height: 4px;
+  position: relative;
+}
+.slider-range {
+  background: var(--accent);
+  border-radius: 999px;
+  height: 100%;
+  position: absolute;
+}
+.slider-thumb {
+  background: var(--text);
+  border-radius: 999px;
+  display: block;
+  height: 14px;
+  width: 14px;
+}
