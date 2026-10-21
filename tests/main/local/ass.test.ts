@@ -1,0 +1,141 @@
+/* @vitest-environment node */
+import { describe, expect, it } from 'vitest';
+import { assFontSize, buildAssDocument, escapeAssText, formatAssTimestamp } from '../../../src/main/export/ass';
+import { DEFAULT_SUBTITLE_STYLE, SUBTITLE_PRESETS, computeSubtitleGeometry } from '../../../src/shared/subtitle-geometry';
+import type { SubtitleStyle } from '../../../src/shared/types/style';
+
+describe('ASS document', () => {
+  it('sets PlayResX and PlayResY to the video size', () => {
+    const doc = buildAssDocument({ captions: [], style: DEFAULT_SUBTITLE_STYLE, videoWidth: 720, videoHeight: 1280 });
+
+    expect(doc).toContain('ScriptType: v4.00+');
+    expect(doc).toContain('PlayResX: 720');
+    expect(doc).toContain('PlayResY: 1280');
+    expect(doc).toContain('WrapStyle: 0');
+    expect(doc).toContain('ScaledBorderAndShadow: yes');
+    expect(doc).toContain('YCbCr Matrix: None');
+  });
+
+  it('sizes the font from the shared geometry so the rendered em equals the geometry font size', () => {
+    const style = styleLine(buildAssDocument({ captions: [], style: DEFAULT_SUBTITLE_STYLE, videoWidth: 720, videoHeight: 1280 }));
+
+    // Geometry: 4.5% of 1280 = 57.6 px em. libass takes Fontsize as win ascent + descent, so 57.6 * 1.519 = 87.5 -> 87.
+    expect(computeSubtitleGeometry(DEFAULT_SUBTITLE_STYLE, 720, 1280).fontSizePx).toBeCloseTo(57.6);
+    expect(style.Fontsize).toBe('87');
+    expect(style.Fontname).toBe('Noto Sans');
+    expect(style.Encoding).toBe('1');
+    expect(style.Name).toBe('Default');
+  });
+
+  it('converts the em size to the win-height Fontsize only for known fonts', () => {
+    expect(assFontSize(100, 'Noto Sans')).toBeCloseTo(151.9);
+    expect(assFontSize(100, 'Unknown Sans')).toBe(100);
+  });
+
+  it('converts #rrggbb to ASS &HAABBGGRR', () => {
+    const style: SubtitleStyle = { ...DEFAULT_SUBTITLE_STYLE, textColor: '#112233', outlineColor: '#445566' };
+    const fields = styleLine(buildAssDocument({ captions: [], style, videoWidth: 720, videoHeight: 1280 }));
+
+    expect(fields.PrimaryColour).toBe('&H00332211');
+    expect(fields.OutlineColour).toBe('&H00665544');
+    expect(fields.SecondaryColour).toBe('&H000000FF');
+  });
+
+  it('maps every position and alignment to the numpad value', () => {
+    const expected: Record<string, string> = {
+      'bottom-left': '1',
+      'bottom-center': '2',
+      'bottom-right': '3',
+      'middle-left': '4',
+      'middle-center': '5',
+      'middle-right': '6',
+      'top-left': '7',
+      'top-center': '8',
+      'top-right': '9'
+    };
+
+    for (const [key, value] of Object.entries(expected)) {
+      const [position, align] = key.split('-') as [SubtitleStyle['position'], SubtitleStyle['align']];
+      const style: SubtitleStyle = { ...DEFAULT_SUBTITLE_STYLE, position, align };
+      const fields = styleLine(buildAssDocument({ captions: [], style, videoWidth: 720, videoHeight: 1280 }));
+      expect(fields.Alignment, key).toBe(value);
+    }
+  });
+
+  it('uses the outline and shadow for the default style', () => {
+    const geometry = computeSubtitleGeometry(DEFAULT_SUBTITLE_STYLE, 720, 1280);
+    const fields = styleLine(buildAssDocument({ captions: [], style: DEFAULT_SUBTITLE_STYLE, videoWidth: 720, videoHeight: 1280 }));
+
+    expect(fields.BorderStyle).toBe('1');
+    expect(fields.Outline).toBe(geometry.outlinePx.toFixed(1));
+    expect(fields.Shadow).toBe(geometry.shadowPx.toFixed(1));
+    expect(fields.BackColour).toBe('&H60000000');
+    expect(fields.Bold).toBe('-1');
+    expect(fields.MarginL).toBe(String(Math.round(geometry.marginHorizontalPx)));
+    expect(fields.MarginV).toBe(String(Math.round(geometry.marginVerticalPx)));
+  });
+
+  it('builds the box style with BorderStyle 3 and the background alpha', () => {
+    const style = SUBTITLE_PRESETS.box;
+    const geometry = computeSubtitleGeometry(style, 720, 1280);
+    const fields = styleLine(buildAssDocument({ captions: [], style, videoWidth: 720, videoHeight: 1280 }));
+
+    expect(fields.BorderStyle).toBe('3');
+    expect(fields.Outline).toBe(String(Math.round(geometry.boxPaddingPx)));
+    expect(fields.Shadow).toBe('0');
+    // opacity 0.65 -> transparency 0.35 -> round(0.35 * 255) = 89 = 0x59
+    expect(fields.OutlineColour).toBe('&H59000000');
+    expect(fields.BackColour).toBe(fields.OutlineColour);
+    expect(fields.Bold).toBe('0');
+  });
+
+  it('writes centisecond timestamps and skips blank captions', () => {
+    const doc = buildAssDocument({
+      captions: [
+        { startMs: 6000, endMs: 9000, text: 'First' },
+        { startMs: 9000, endMs: 10005, text: '   ' },
+        { startMs: 10005, endMs: 3_723_040, text: 'Last' }
+      ],
+      style: DEFAULT_SUBTITLE_STYLE,
+      videoWidth: 720,
+      videoHeight: 1280
+    });
+
+    const dialogues = doc.split('\n').filter((line) => line.startsWith('Dialogue:'));
+    expect(dialogues).toEqual([
+      'Dialogue: 0,0:00:06.00,0:00:09.00,Default,,0,0,0,,First',
+      'Dialogue: 0,0:00:10.01,1:02:03.04,Default,,0,0,0,,Last'
+    ]);
+    expect(formatAssTimestamp(3_723_040)).toBe('1:02:03.04');
+    expect(formatAssTimestamp(10_005)).toBe('0:00:10.01');
+  });
+
+  it('escapes newlines, braces, and backslashes in caption text', () => {
+    expect(escapeAssText('line one\r\nline two')).toBe('line one\\Nline two');
+    expect(escapeAssText('{\\an8}hi}')).toBe('(⧵an8)hi)');
+    expect(escapeAssText('a\\Nb')).toBe('a⧵Nb');
+  });
+
+  it('keeps escaped text as the last Dialogue field', () => {
+    const doc = buildAssDocument({
+      captions: [{ startMs: 0, endMs: 1000, text: 'Ćao, {x}\nđače' }],
+      style: DEFAULT_SUBTITLE_STYLE,
+      videoWidth: 720,
+      videoHeight: 1280
+    });
+
+    expect(doc).toContain('Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Ćao, (x)\\Nđače');
+  });
+});
+
+/** Returns the Style line as a field map keyed by the Format line names. */
+function styleLine(doc: string): Record<string, string> {
+  const format = doc.split('\n').find((line) => line.startsWith('Format: Name, Fontname'));
+  const style = doc.split('\n').find((line) => line.startsWith('Style: Default,'));
+  if (!format || !style) throw new Error('Style section is missing.');
+
+  const names = format.slice('Format: '.length).split(', ');
+  const values = style.slice('Style: '.length).split(',');
+  expect(values).toHaveLength(names.length);
+  return Object.fromEntries(names.map((name, index) => [name, values[index]]));
+}

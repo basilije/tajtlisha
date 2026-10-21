@@ -1,7 +1,10 @@
-export { SubtitleBurnService } from './burn-subtitles';
-export { buildCopyFilename, buildExportFilename } from './filenames';
-export type { ExportFilenameInput } from './filenames';
-export { ExportOutputConflictError, ProjectExportService } from './project-export-service';
-export { formatSrtTimestamp, serializeSrt, writeSrt } from './srt';
+export { buildAssDocument, escapeAssText, formatAssTimestamp } from './ass';
+export type { AssCaption, BuildAssDocumentInput } from './ass';
+export { captionCuesFor, hasText, toExportCaptions } from './captions';
+export type { CaptionTextField, ExportCaption, ExportCue } from './captions';
+export { buildCopyFilename, sanitizeFilePart } from './filenames';
+export { ProjectExportService, escapeFilterValue } from './project-export-service';
+export type { ProjectExportContext, ProjectExportProgress, ProjectExportServiceOptions } from './project-export-service';
+export { buildSrtFromCaptions, formatSrtTimestamp, serializeSrt, serializeSrtCues } from './srt';
 export { assertValidSubtitleTiming, validateSubtitleTiming } from './timing';
-export type { TimingValidationIssue } from './timing';
+export type { TimedCue, TimingValidationIssue } from './timing';
