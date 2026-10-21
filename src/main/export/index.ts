@@ -5,7 +5,7 @@ export type { CaptionTextField, ExportCaption, ExportCue } from './captions';
 export { buildCopyFilename, sanitizeFilePart } from './filenames';
 export { escapeFilterValue } from './ffmpeg-args';
 export { ProjectExportService } from './project-export-service';
-export type { ProjectExportContext, ProjectExportProgress, ProjectExportServiceOptions } from './project-export-service';
+export type { ExportFileOps, ProjectExportContext, ProjectExportProgress, ProjectExportServiceOptions } from './project-export-service';
 export { renderPreviewFrame, PREVIEW_MAX_HEIGHT } from './preview-frame';
 export type { PreviewFrameContext, PreviewFrameDeps, PreviewFrameRequest, PreviewFrameResult } from './preview-frame';
 export { buildSrtFromCaptions, formatSrtTimestamp, serializeSrt, serializeSrtCues } from './srt';

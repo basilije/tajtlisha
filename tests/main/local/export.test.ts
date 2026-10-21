@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { AppError } from '../../../src/shared/errors';
 import { DEFAULT_SUBTITLE_STYLE } from '../../../src/shared/subtitle-geometry';
 import type { ProjectExportRequest } from '../../../src/shared/types/jobs';
@@ -274,7 +274,9 @@ describe('project export outputs', () => {
       expect(result.files).toEqual([{ kind: 'video', path: join(folder, 'clip.subtitled.mp4') }]);
       expect(args.slice(0, 8)).toEqual(['-y', '-ss', '1.000', '-i', join(folder, 'source.mp4'), '-t', '2.000', '-map']);
       expect(args).toEqual(expect.arrayContaining(['-f', 'mp4', '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac']));
-      expect(args[args.length - 1]).toBe(join(folder, '.clip.subtitled.mp4.tajtlisha-tmp'));
+      // ffmpeg writes into a fresh staging folder inside the output folder, never to the final name.
+      expect(dirname(dirname(args[args.length - 1]))).toBe(folder);
+      expect(basename(dirname(args[args.length - 1]))).toMatch(/^\.tajtlisha-export-/);
       expect(args[args.indexOf('-vf') + 1]).toMatch(/^scale=720:1280,setsar=1,ass=filename=.+:fontsdir=\/fonts$/);
       expect(calls[0].assDocument).toContain('PlayResX: 720');
       expect(calls[0].assDocument).toContain('Dialogue: 0,0:00:00.00,0:00:01.20,Default,,0,0,0,,Seca pocetak');
