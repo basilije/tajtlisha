@@ -14,6 +14,11 @@ export type StyleDrawerProps = {
   onChange: (patch: Partial<SubtitleStyle>) => void;
   onApplyPreset: (id: SubtitlePresetId) => void;
   defaultOpen?: boolean;
+  /** Controlled open state. Leave it out and the drawer manages its own. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Explicit height in px. The body scrolls inside it. Leave it out for the content height. */
+  height?: number;
 };
 
 const PRESET_LABEL_KEYS: Record<SubtitlePresetId, string> = {
@@ -25,21 +30,39 @@ const PRESET_LABEL_KEYS: Record<SubtitlePresetId, string> = {
 const SAMPLE_FONT_PX = 16;
 
 /** Collapsible subtitle style editor. Changes go out as partial patches; presets replace the whole style. */
-export function StyleDrawer({ style, onChange, onApplyPreset, defaultOpen = false }: StyleDrawerProps) {
+export function StyleDrawer({
+  style,
+  onChange,
+  onApplyPreset,
+  defaultOpen = false,
+  open: controlledOpen,
+  onOpenChange,
+  height
+}: StyleDrawerProps) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(defaultOpen);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? uncontrolledOpen;
   const bodyId = useId();
   const outlineDisabled = style.backgroundEnabled;
   const presetIds = Object.keys(SUBTITLE_PRESETS) as SubtitlePresetId[];
 
+  function toggle(): void {
+    const next = !open;
+    if (controlledOpen === undefined) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  }
+
   return (
-    <section className="panel style-drawer">
+    <section
+      className={height === undefined ? 'panel style-drawer' : 'panel style-drawer style-drawer-sized'}
+      style={height === undefined ? undefined : { height }}
+    >
       <button
         type="button"
         className="style-drawer-toggle"
         aria-expanded={open}
         aria-controls={bodyId}
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggle}
       >
         {open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
         <span className="panel-title">{t('preview.styleSection')}</span>

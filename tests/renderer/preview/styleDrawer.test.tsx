@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StyleDrawer, type StyleDrawerProps } from '../../../src/renderer/src/components/preview';
@@ -107,5 +108,67 @@ describe('StyleDrawer', () => {
 
     expect(screen.getByRole('switch', { name: 'Outline' })).toBeEnabled();
     expect(screen.queryByText('Outline is not used while the background box is on.')).toBeNull();
+  });
+
+  it('follows the controlled open state and reports toggles to the owner', () => {
+    const onOpenChange = vi.fn();
+    renderWithI18n(
+      <StyleDrawer
+        style={DEFAULT_SUBTITLE_STYLE}
+        onChange={vi.fn()}
+        onApplyPreset={vi.fn()}
+        open={false}
+        onOpenChange={onOpenChange}
+      />
+    );
+    const toggle = screen.getByRole('button', { name: 'Subtitle style' });
+
+    fireEvent.click(toggle);
+
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    // The owner did not change its state, so the drawer stays closed.
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('opens and closes through an owner that holds the state', () => {
+    function Owner() {
+      const [open, setOpen] = useState(false);
+      return (
+        <StyleDrawer
+          style={DEFAULT_SUBTITLE_STYLE}
+          onChange={vi.fn()}
+          onApplyPreset={vi.fn()}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      );
+    }
+    renderWithI18n(<Owner />);
+    const toggle = screen.getByRole('button', { name: 'Subtitle style' });
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('switch', { name: 'Bold' })).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('uses an explicit height when given', () => {
+    const { container } = renderWithI18n(
+      <StyleDrawer style={DEFAULT_SUBTITLE_STYLE} onChange={vi.fn()} onApplyPreset={vi.fn()} defaultOpen height={320} />
+    );
+    const drawer = container.querySelector('.style-drawer');
+
+    expect(drawer).toHaveClass('style-drawer-sized');
+    expect(drawer).toHaveStyle({ height: '320px' });
+  });
+
+  it('keeps the content height when no explicit height is given', () => {
+    const { container } = renderWithI18n(
+      <StyleDrawer style={DEFAULT_SUBTITLE_STYLE} onChange={vi.fn()} onApplyPreset={vi.fn()} defaultOpen />
+    );
+
+    expect(container.querySelector('.style-drawer')).not.toHaveClass('style-drawer-sized');
   });
 });
