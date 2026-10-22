@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ### Added
 - Interface size: Ctrl + / Ctrl - / Ctrl 0 zoom the whole window (80% to 150%). The level is also set in Settings > General.
+- Editor panels can be resized: drag the line between captions and preview, and the line between the video and
+  the subtitle style panel. Arrow keys move a focused line, double-click restores the default. Sizes are remembered.
 
 ### Fixed
 - Release notes in Settings > About are shown as plain text instead of raw HTML from GitHub.
