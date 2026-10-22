@@ -53,6 +53,26 @@ or update path.
 | 10 | Sol review, E2E against a real clip, preview vs export frame comparison | `develop` | todo |
 | 11 | Release v0.2.0 | `release/0.2.0` | todo |
 
+## Pre-release (Sol renderer review of develop at 03d8be8)
+
+| # | Task | Branch | Status |
+| --- | --- | --- | --- |
+| R1 | Manual translation overwrite, startup load race, overlapping failed saves, load failure blocking persistence, quit with unsaved data (Retry / Quit / Cancel), empty model id, Space on focused controls, export validation clipped to trim | `fix/pre-release-review` | in progress |
+
+## Backlog for v0.2.1
+
+- Exact-frame preview and preview-proxy recovery must be invalidated by content/source generation, not only path.
+- Settings optimistic updates: reconcile outstanding patches; show rejected updates.
+- The "auto-detect spoken language" switch has no effect: implement or remove.
+- Playback re-renders the whole caption table about 15 times per second; memoize rows, compute pending rows once.
+- Preview shadow differs from ASS (opacity, no shadow with box).
+- Provider connection messages are English in the Serbian UI: return codes and translate.
+- Serbian plural forms for counts (i18next _one/_few/_other).
+- Text-only (speech detection) captions can exceed 6 s.
+- Translation prompt says "from und" when the source language is unknown.
+- Export lock is in-process only.
+- Real app icon; Windows code signing.
+
 ## Open decisions
 
 - GitHub repository: `blonestar/tajtlisha`, PUBLIC (owner decision 2026-10-22). Installers are built only by the
@@ -119,3 +139,5 @@ or update path.
   re-tagged. Public repo https://github.com/blonestar/tajtlisha created; master, develop and v0.1.0 pushed.
 - 2026-10-22: First CI run: Linux job green; Windows job showed real ffmpeg export works on Windows but two tests
   assumed LF line endings and POSIX paths. Fixed (CRLF-safe parsing in ffmpeg helpers too).
+- 2026-10-22: Owner tested the app and likes it. Sol reviewed the renderer: 6 must-fix (all reproduced) -> R1.
+  Quit contract now reports whether pending work was saved.
