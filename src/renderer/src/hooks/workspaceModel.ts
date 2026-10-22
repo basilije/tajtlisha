@@ -1,12 +1,22 @@
 import { effectiveMaxCharsPerLine } from '../../../shared/subtitle-geometry';
 import type { ExportOutputs, PolishMode } from '../../../shared/types/jobs';
-import type { ProjectDocument } from '../../../shared/types/project';
+import type { CaptionRow, ProjectDocument } from '../../../shared/types/project';
 import type { AppSettings } from '../../../shared/types/settings';
 import {
+  captionsInTrim,
   validateCaptions,
   type CaptionIssueMap,
   type CaptionValidationOptions
 } from '../state/selectors';
+
+/**
+ * Model id from settings for an AI request. The settings store keeps '' for
+ * "Default" (a patch cannot delete a map key), so blank ids are sent as absent.
+ */
+export function optionalModelId(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
 
 /** Language code used when the spoken language is unknown or should be detected. */
 export const UNKNOWN_LANGUAGE = 'und';
@@ -54,6 +64,19 @@ export function defaultExportOutputs(settings: AppSettings): ExportOutputs {
  * Validation for the caption table and export. `requireTranslation` makes
  * empty translations blocking; export counts them separately, so it passes false.
  */
+/**
+ * The captions the export writes: those overlapping the trim range, clipped to
+ * it, as the main process does before rendering. Captions outside the trim are dropped.
+ */
+export function captionsForExport(project: ProjectDocument): CaptionRow[] {
+  const { trim } = project;
+  return captionsInTrim(project.captions, trim).map((caption) => ({
+    ...caption,
+    startMs: Math.max(caption.startMs, trim.startMs),
+    endMs: Math.min(caption.endMs, trim.endMs)
+  }));
+}
+
 export function captionIssuesFor(
   project: ProjectDocument,
   settings: AppSettings,

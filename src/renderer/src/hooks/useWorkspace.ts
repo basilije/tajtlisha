@@ -10,7 +10,13 @@ import type { ProjectStore } from '../state/useProjectStore';
 import { captureJobContext, isContextCurrent, type JobRunner } from '../state/useJobRunner';
 import { describeAppError, appErrorKey } from '../utils/error-message';
 import { jobOutcomeView, type JobView } from './jobOutcome';
-import { captionLineLimit, polishFor, sourceLanguageCode, spokenLanguageOf } from './workspaceModel';
+import {
+  captionLineLimit,
+  optionalModelId,
+  polishFor,
+  sourceLanguageCode,
+  spokenLanguageOf
+} from './workspaceModel';
 
 export type Notice = { tone: 'error' | 'info'; text: string; detail?: string };
 
@@ -138,7 +144,7 @@ export function useWorkspace({ store, settings, providers, job }: WorkspaceOptio
     if (!api || !source || !providerId) return;
 
     const context = captureJobContext(current);
-    const modelId = config.aiConnector.transcriptionModelByProvider[providerId];
+    const modelId = optionalModelId(config.aiConnector.transcriptionModelByProvider[providerId]);
     const outcome = await job.run(
       'transcribe',
       (jobId) =>
@@ -215,8 +221,13 @@ export function useWorkspace({ store, settings, providers, job }: WorkspaceOptio
       return;
     }
 
-    // The text each row had when it was sent. A row edited during the job keeps its old state.
-    const sent = new Map(rows.map((caption): [string, string] => [caption.id, caption.original]));
+    // What each row held when it was sent. The result applies only while both fields still match.
+    const sent = new Map(
+      rows.map((caption): [string, { original: string; translation: string }] => [
+        caption.id,
+        { original: caption.original, translation: caption.translation }
+      ])
+    );
     const targetLanguage = current.targetLanguage;
     const context = captureJobContext(current);
     const outcome = await job.run(
@@ -225,7 +236,7 @@ export function useWorkspace({ store, settings, providers, job }: WorkspaceOptio
         api.workflow.translate({
           jobId,
           providerId,
-          modelId: config.aiConnector.textModelByProvider[providerId],
+          modelId: optionalModelId(config.aiConnector.textModelByProvider[providerId]),
           sourceLanguage: sourceLanguageCode(current),
           targetLanguage,
           captions: rows.map((caption) => ({ id: caption.id, text: caption.original })),
@@ -247,10 +258,18 @@ export function useWorkspace({ store, settings, providers, job }: WorkspaceOptio
       return;
     }
 
-    const originals = new Map(latest.captions.map((caption): [string, string] => [caption.id, caption.original]));
-    const translations = outcome.value.translations.filter(
-      (item) => sent.has(item.id) && originals.get(item.id) === sent.get(item.id)
-    );
+    // A manual translation fix made during the job wins over the AI result, so the row must still match on both fields.
+    const currentRows = new Map(latest.captions.map((caption) => [caption.id, caption]));
+    const translations = outcome.value.translations.filter((item) => {
+      const snapshot = sent.get(item.id);
+      const row = currentRows.get(item.id);
+      return (
+        snapshot !== undefined &&
+        row !== undefined &&
+        row.original === snapshot.original &&
+        row.translation === snapshot.translation
+      );
+    });
     dispatch({ type: 'captions/applyTranslations', translations, targetLanguage });
 
     const skipped = sent.size - translations.length;

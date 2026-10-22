@@ -23,7 +23,7 @@ import { createLocalMediaProtocol } from './media/local-media-protocol';
 import { KnownSources } from './project/known-sources';
 import { PreviewProxyCache } from './project/preview-proxy-cache';
 import { ProjectStore } from './project/project-store';
-import { QuitCoordinator, withTimeout } from './quit-coordinator';
+import { QuitCoordinator, withTimeout, type UnsavedQuitAnswer } from './quit-coordinator';
 import { bundledFontsDir } from './resources-path';
 import { SettingsStore } from './settings';
 import { createDefaultUpdateService, scheduleStartupCheck } from './updater';
@@ -34,8 +34,6 @@ const localMediaProtocol = createLocalMediaProtocol();
 /** How long a window may hold its close while running jobs stop. */
 const CLOSE_JOB_TIMEOUT_MS = 3000;
 
-/** Set once quitting starts. Window close then skips waiting, since the quit sequence already drains jobs. */
-let quitting = false;
 
 /** Only the app's own renderer may load or navigate in a window or call IPC. */
 const rendererEntry = rendererEntryFor({
@@ -72,7 +70,7 @@ function createWindow(jobs: JobRegistry): void {
   const windowId = mainWindow.webContents.id;
   let closeReady = false;
   mainWindow.on('close', (event) => {
-    if (closeReady || quitting || !jobs.hasJobs(windowId)) return;
+    if (closeReady || quitCoordinator?.shuttingDown || !jobs.hasJobs(windowId)) return;
     event.preventDefault();
     void withTimeout(jobs.cancelAllAndWait(windowId), CLOSE_JOB_TIMEOUT_MS).finally(() => {
       closeReady = true;
@@ -98,6 +96,24 @@ function createWindow(jobs: JobRegistry): void {
 
 /** Created once the app is ready; before that a quit is not held back. */
 let quitCoordinator: QuitCoordinator | undefined;
+
+const UNSAVED_QUIT_ANSWERS: readonly UnsavedQuitAnswer[] = ['retry', 'quit', 'cancel'];
+
+/** Native question shown when a window could not save. Buttons: retry, quit anyway, cancel the quit. */
+async function confirmUnsavedQuit(settingsStore: SettingsStore, detail: string | undefined): Promise<UnsavedQuitAnswer> {
+  const copy = mainStringsFor(resolveMainLanguage((await settingsStore.get()).uiLanguage, app.getLocale()));
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    title: copy.quitUnsavedTitle,
+    message: copy.quitUnsavedMessage,
+    detail: detail ? `${copy.quitUnsavedDetail}\n\n${detail}` : copy.quitUnsavedDetail,
+    buttons: [copy.quitUnsavedRetry, copy.quitUnsavedQuit, copy.quitUnsavedCancel],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true
+  });
+  return UNSAVED_QUIT_ANSWERS[response] ?? 'cancel';
+}
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
@@ -132,6 +148,7 @@ app.whenReady().then(async () => {
     drainJobs: () => jobs.cancelAllAndWait(),
     flushProjects: () => projectStore.flush(),
     cleanupPreviews: () => previewProxies.cleanup(),
+    confirmUnsavedQuit: (detail) => confirmUnsavedQuit(settingsStore, detail),
     quit: () => app.quit()
   });
   quitCoordinator = quit;
@@ -186,7 +203,6 @@ app.whenReady().then(async () => {
 // Quit runs the shutdown sequence (renderer flush, jobs, project saves, temp
 // files) before the process exits. The coordinator lets the second quit through.
 app.on('before-quit', (event) => {
-  quitting = true;
   quitCoordinator?.handleBeforeQuit(event);
 });
 

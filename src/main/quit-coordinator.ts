@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { IPC_CHANNELS } from '../shared/types/ipc';
+import { IPC_CHANNELS, type QuitReadyResult } from '../shared/types/ipc';
 
 /** How long a renderer may take to flush its autosave before quit goes on without it. */
 export const RENDERER_READY_TIMEOUT_MS = 3000;
@@ -13,6 +13,9 @@ export type QuitWindow = {
   send(channel: string, payload: unknown): void;
 };
 
+/** The user's answer when a renderer could not save its pending work. */
+export type UnsavedQuitAnswer = 'retry' | 'quit' | 'cancel';
+
 export type QuitCoordinatorOptions = {
   /** Currently open windows. Destroyed windows must not be returned. */
   windows(): QuitWindow[];
@@ -21,6 +24,12 @@ export type QuitCoordinatorOptions = {
   flushProjects(): Promise<void>;
   /** Removes preview files. Runs after drainJobs so no transcode writes into a removed file. */
   cleanupPreviews(): Promise<void>;
+  /**
+   * Asks the user what to do when a window reports unsaved work. 'retry' asks
+   * the windows again, 'quit' goes on without saving, 'cancel' aborts the quit.
+   * A throw counts as 'cancel', so no data is lost by a broken dialog.
+   */
+  confirmUnsavedQuit(detail: string | undefined): Promise<UnsavedQuitAnswer>;
   /** Called once shutdown work is done. The second before-quit pass lets the quit through. */
   quit(): void;
   rendererReadyTimeoutMs?: number;
@@ -36,15 +45,19 @@ type Phase = 'idle' | 'shutting_down' | 'done';
 
 /**
  * Runs the shutdown sequence on the first before-quit: ask every renderer to
- * flush pending edits, wait for their answers (or a timeout), drain jobs, save
- * projects, remove temp files, then quit. Repeated quit requests during the
- * sequence are held; once it is done the next quit passes through.
+ * flush pending edits, wait for their answers (or a timeout), ask the user when
+ * a renderer could not save, drain jobs, save projects, remove temp files, then
+ * quit. Repeated quit requests during the sequence are held. A cancelled quit
+ * returns to idle, so the next quit starts the sequence again. Once the
+ * sequence is done the next quit passes through.
  */
 export class QuitCoordinator {
   private phase: Phase = 'idle';
   private activeRequestId: string | undefined;
   private waitingWindowIds = new Set<number>();
   private notifyAllReady: (() => void) | undefined;
+  /** First unsaved report in the current round. Reset for every round. */
+  private roundUnsaved: QuitReadyResult | undefined;
 
   private readonly rendererReadyTimeoutMs: number;
   private readonly drainTimeoutMs: number;
@@ -65,21 +78,64 @@ export class QuitCoordinator {
     if (this.phase === 'shutting_down') return;
 
     this.phase = 'shutting_down';
-    void withTimeout(this.runSteps(), this.shutdownTimeoutMs)
-      .catch(() => undefined)
-      .finally(() => {
-        this.phase = 'done';
+    void this.shutDown()
+      .catch((): ShutdownOutcome => 'quit')
+      .then((outcome) => {
         this.activeRequestId = undefined;
+        this.notifyAllReady = undefined;
+        if (outcome === 'cancel') {
+          this.phase = 'idle';
+          return;
+        }
+        this.phase = 'done';
         this.options.quit();
       });
   }
 
+  /** True while the shutdown sequence runs (including the unsaved-work question). */
+  get shuttingDown(): boolean {
+    return this.phase === 'shutting_down';
+  }
+
   /** Renderer answered the prepare request. Answers for other requests are ignored. */
-  acknowledge(requestId: string, windowId: number): void {
+  acknowledge(requestId: string, windowId: number, result: QuitReadyResult): void {
     if (requestId !== this.activeRequestId) return;
-    this.waitingWindowIds.delete(windowId);
+    if (!this.waitingWindowIds.delete(windowId)) return;
+    if (!result.saved && this.roundUnsaved === undefined) {
+      this.roundUnsaved = result;
+    }
     if (this.waitingWindowIds.size === 0) {
       this.notifyAllReady?.();
+    }
+  }
+
+  private async shutDown(): Promise<ShutdownOutcome> {
+    if ((await this.askRenderers()) === 'cancel') return 'cancel';
+    // The shutdown timeout starts after the user answered, so a dialog cannot run it out.
+    await settle(withTimeout(this.runSteps(), this.shutdownTimeoutMs));
+    return 'quit';
+  }
+
+  /**
+   * Asks the windows to flush until none reports unsaved work, or the user
+   * decides to quit anyway or cancel. Windows that never answer count as saved.
+   */
+  private async askRenderers(): Promise<'continue' | 'cancel'> {
+    for (;;) {
+      const unsaved = await this.waitForRenderers();
+      if (!unsaved) return 'continue';
+
+      const answer = await this.confirmUnsaved(unsaved.detail);
+      if (answer === 'retry') continue;
+      return answer === 'quit' ? 'continue' : 'cancel';
+    }
+  }
+
+  private async confirmUnsaved(detail: string | undefined): Promise<UnsavedQuitAnswer> {
+    try {
+      return await this.options.confirmUnsavedQuit(detail);
+    } catch {
+      return 'cancel';
     }
   }
 
@@ -88,16 +144,22 @@ export class QuitCoordinator {
    * so a stuck job cannot keep the project save from happening.
    */
   private async runSteps(): Promise<void> {
-    await settle(this.waitForRenderers());
     await withTimeout(settle(this.options.drainJobs()), this.drainTimeoutMs);
     await settle(this.options.flushProjects());
     await settle(this.options.cleanupPreviews());
   }
 
-  private async waitForRenderers(): Promise<void> {
+  /** One prepare round. Resolves with the first unsaved report, or undefined when every answer was saved. */
+  private async waitForRenderers(): Promise<QuitReadyResult | undefined> {
     const requestId = this.createRequestId();
     this.activeRequestId = requestId;
-    const windows = this.options.windows();
+    this.roundUnsaved = undefined;
+    let windows: QuitWindow[];
+    try {
+      windows = this.options.windows();
+    } catch {
+      windows = [];
+    }
     this.waitingWindowIds = new Set(windows.map((window) => window.id));
 
     const allReady = new Promise<void>((resolve) => {
@@ -112,16 +174,21 @@ export class QuitCoordinator {
         window.send(IPC_CHANNELS.appPrepareQuit, requestId);
       } catch {
         // The window was destroyed after it was listed; nothing to wait for.
-        this.acknowledge(requestId, window.id);
+        this.acknowledge(requestId, window.id, { saved: true });
       }
     }
 
     await withTimeout(allReady, this.rendererReadyTimeoutMs);
     // Late answers after the timeout must not count for a later request.
+    const unsaved = this.roundUnsaved;
     this.activeRequestId = undefined;
     this.notifyAllReady = undefined;
+    this.roundUnsaved = undefined;
+    return unsaved;
   }
 }
+
+type ShutdownOutcome = 'quit' | 'cancel';
 
 function settle(work: Promise<void>): Promise<void> {
   return work.then(

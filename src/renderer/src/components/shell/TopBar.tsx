@@ -21,6 +21,8 @@ export type TopBarProps = {
   onUndo: () => void;
   onRedo: () => void;
   onOpenVideo: () => void;
+  /** True while the saved project is still loading. Opening a video then would be replaced by the load. */
+  openVideoDisabled?: boolean;
   onOpenSettings: () => void;
   onExport: () => void;
   exportDisabled: boolean;
@@ -45,6 +47,7 @@ export function TopBar({
   onUndo,
   onRedo,
   onOpenVideo,
+  openVideoDisabled = false,
   onOpenSettings,
   onExport,
   exportDisabled,
@@ -96,6 +99,7 @@ export function TopBar({
           className="btn btn-sm"
           title={withShortcut(t('shell.top.openVideo'), `${modifierKeys}+O`)}
           onClick={onOpenVideo}
+          disabled={openVideoDisabled}
         >
           <FolderOpen aria-hidden="true" size={14} />
           {t('shell.top.openVideo')}

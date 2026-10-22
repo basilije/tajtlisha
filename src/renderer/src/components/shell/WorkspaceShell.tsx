@@ -80,25 +80,30 @@ export function WorkspaceShell({ runtime }: WorkspaceShellProps): ReactElement {
   const ffmpeg = useFfmpegStatus();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const { state, dispatch, saveError, isDirty, sourceStatus, flush } = store;
+  const { state, dispatch, saveError, loadError, retryLoad, isDirty, sourceStatus, flush, ready } = store;
   const project = state.project;
   const source = project.source;
   const clipName = source ? fileNameOf(source.inputPath) : null;
   const busy = job.job !== null;
   const exportNeedsTranslation = outputsNeedTranslation(exportModel.outputs);
 
-  // Quit handshake: pending edits are written before main quits. Registered once.
+  // Quit handshake: pending edits are written before main quits. A failed write rejects,
+  // so main asks the user whether to retry, quit without saving or cancel. Registered once.
   const flushRef = useRef(flush);
   flushRef.current = flush;
   useEffect(() => {
     const api = window.tajtlisha as TajtlishaApi | undefined;
-    return api?.app.onPrepareQuit(() => flushRef.current());
+    return api?.app.onPrepareQuit(async () => {
+      const outcome = await flushRef.current();
+      if (!outcome.ok) throw new Error(outcome.error);
+    });
   }, []);
 
   useKeyboardShortcuts([
     // Opening a video during a job is allowed: the job's result is dropped if the video changed.
-    { key: 'o', ctrlOrMeta: true, handler: workspace.openVideo },
-    { key: 'e', ctrlOrMeta: true, handler: () => source && !busy && exportModel.openDialog() },
+    // Before the saved project has loaded, a new video would be replaced by the load, so it waits.
+    { key: 'o', ctrlOrMeta: true, handler: () => ready && workspace.openVideo() },
+    { key: 'e', ctrlOrMeta: true, handler: () => ready && source && !busy && exportModel.openDialog() },
     { key: 'z', ctrlOrMeta: true, handler: () => dispatch({ type: 'history/undo' }) },
     { key: 'z', ctrlOrMeta: true, shift: true, handler: () => dispatch({ type: 'history/redo' }) },
     { key: 'y', ctrlOrMeta: true, handler: () => dispatch({ type: 'history/redo' }) }
@@ -124,6 +129,7 @@ export function WorkspaceShell({ runtime }: WorkspaceShellProps): ReactElement {
         onUndo={() => dispatch({ type: 'history/undo' })}
         onRedo={() => dispatch({ type: 'history/redo' })}
         onOpenVideo={workspace.openVideo}
+        openVideoDisabled={!ready}
         onOpenSettings={() => setSettingsOpen(true)}
         onExport={exportModel.openDialog}
         exportDisabled={source === null || busy}
@@ -133,6 +139,22 @@ export function WorkspaceShell({ runtime }: WorkspaceShellProps): ReactElement {
       <StepIndicator statuses={statuses} onSelect={(step) => focusStep(step, source !== null)} />
 
       {sourceMissing && <SourceBanner onFind={workspace.relinkVideo} />}
+
+      {loadError && (
+        <div className="message message-error app-notice" role="alert">
+          <CircleAlert aria-hidden="true" size={14} />
+          <span className="app-notice-text">
+            <strong>{t('shell.projectLoad.title')}</strong> {t('shell.projectLoad.body')}
+          </span>
+          <code className="app-notice-detail">{loadError}</code>
+          <button type="button" className="btn btn-sm" onClick={retryLoad}>
+            {t('shell.projectLoad.retry')}
+          </button>
+          <button type="button" className="btn btn-sm" onClick={workspace.openVideo}>
+            {t('shell.projectLoad.openVideo')}
+          </button>
+        </div>
+      )}
 
       {workspace.notice && (
         <div
@@ -155,7 +177,11 @@ export function WorkspaceShell({ runtime }: WorkspaceShellProps): ReactElement {
       )}
 
       <main className="app-main">
-        {source ? (
+        {!ready ? (
+          <div className="app-loading" role="status">
+            {t('shell.loading')}
+          </div>
+        ) : source ? (
           <EditorPage
             store={store}
             settings={runtime.settings}

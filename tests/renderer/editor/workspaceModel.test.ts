@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { blockingIssueCount } from '../../../src/renderer/src/state/selectors';
 import {
   captionIssuesFor,
+  captionsForExport,
   defaultExportOutputs,
   folderOf,
+  optionalModelId,
   outputsNeedTranslation,
   polishFor,
   sanitizeBaseName,
@@ -78,5 +81,45 @@ describe('caption issues for the workspace', () => {
       'empty_translation'
     );
     expect(captionIssuesFor(project, SETTINGS, true).todo.map((issue) => issue.code)).toContain('empty_translation');
+  });
+
+  it('clips export captions to the trim and drops captions outside it', () => {
+    const project = makeProject({
+      trim: { startMs: 1000, endMs: 3000 },
+      captions: [
+        caption('before', 0, 900, 'a'),
+        caption('edge', 800, 1500, 'b'),
+        caption('inside', 1500, 2500, 'c'),
+        caption('tail', 2900, 4000, 'd'),
+        caption('after', 3500, 4500, 'e')
+      ]
+    });
+
+    const exported = captionsForExport(project);
+    expect(exported.map((item) => item.id)).toEqual(['edge', 'inside', 'tail']);
+    expect(exported[0]).toMatchObject({ startMs: 1000, endMs: 1500 });
+    expect(exported[2]).toMatchObject({ startMs: 2900, endMs: 3000 });
+  });
+
+  it('does not let captions outside the trim block the export or count as missing translations', () => {
+    const project = makeProject({
+      trim: { startMs: 1000, endMs: 3000 },
+      captions: [
+        caption('outside', 4000, 5000, 'lost', ''),
+        caption('inside', 1500, 2500, 'kept', 'zadrzano')
+      ]
+    });
+
+    const exported = { ...project, captions: captionsForExport(project) };
+    expect(blockingIssueCount(captionIssuesFor(exported, SETTINGS, true))).toBe(0);
+    expect(exported.captions.filter((item) => item.translation.trim() === '')).toHaveLength(0);
+    expect(blockingIssueCount(captionIssuesFor(project, SETTINGS, true))).toBeGreaterThan(0);
+  });
+
+  it('treats blank model ids as Default, so no model id is sent', () => {
+    expect(optionalModelId('')).toBeUndefined();
+    expect(optionalModelId('   ')).toBeUndefined();
+    expect(optionalModelId(undefined)).toBeUndefined();
+    expect(optionalModelId(' whisper-1 ')).toBe('whisper-1');
   });
 });
