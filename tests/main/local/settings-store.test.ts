@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
@@ -87,6 +87,39 @@ describe('SettingsStore', () => {
       const cleared = await store.update({ defaultOutputFolder: '' });
       expect(cleared.defaultOutputFolder).toBeUndefined();
       expect('defaultOutputFolder' in (await store.get())).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults the UI zoom to 100% and snaps patched values to a level', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'tajtlisha-settings-'));
+    try {
+      const store = new SettingsStore({ filePath: join(dir, 'settings.json') });
+      expect((await store.get()).uiZoomPercent).toBe(100);
+
+      expect((await store.update({ uiZoomPercent: 103 })).uiZoomPercent).toBe(105);
+      expect((await store.update({ uiZoomPercent: 999 })).uiZoomPercent).toBe(150);
+      expect((await store.update({ uiZoomPercent: 'abc' as never })).uiZoomPercent).toBe(100);
+
+      const persisted = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8'));
+      expect(persisted.uiZoomPercent).toBe(100);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('normalizes a hand-edited UI zoom when the file is read', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'tajtlisha-settings-'));
+    try {
+      const filePath = join(dir, 'settings.json');
+      const store = new SettingsStore({ filePath });
+
+      await writeFile(filePath, JSON.stringify({ uiZoomPercent: 999 }), 'utf8');
+      expect((await store.get()).uiZoomPercent).toBe(150);
+
+      await writeFile(filePath, JSON.stringify({ uiZoomPercent: 'abc' }), 'utf8');
+      expect((await store.get()).uiZoomPercent).toBe(100);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

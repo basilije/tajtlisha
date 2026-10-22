@@ -153,6 +153,12 @@ export type TajtlishaApi = {
   app: {
     getInfo(): Promise<{ version: string; platform: string; isPackaged: boolean }>;
     /**
+     * Sets the Chromium page zoom of this window (1 = 100%). Applied in the
+     * preload with webFrame, so it is local to the renderer and needs no IPC
+     * channel. Factors are clamped to 0.5..2; non-finite values are ignored.
+     */
+    setZoomFactor(factor: number): void;
+    /**
      * Registers the quit handshake. When main is about to quit it notifies the
      * renderer; the preload awaits every registered listener (e.g. flushing the
      * pending autosave) and reports a QuitReadyResult. A listener that rejects

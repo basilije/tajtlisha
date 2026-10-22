@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { AiProviderCapabilities, AiProviderId, AuthMode, ProviderModelDescriptor, ProviderStatus, TestConnectionResult } from '../../../shared/types/ai';
 import type { TajtlishaApi } from '../../../shared/types/ipc';
 import type { AppSettings, UiLanguage } from '../../../shared/types/settings';
+import { normalizeUiZoom } from '../../../shared/ui-zoom';
 import { resolveUiLanguage } from '../i18n';
 
 export type AppRuntimePhase = 'loading' | 'ready' | 'error';
@@ -88,13 +89,32 @@ export function useAppRuntime(fallbackSettings: AppSettings): AppRuntime {
 
   const reload = useCallback(() => setAttempt((value) => value + 1), []);
 
-  const updateSettings = useCallback(
-    async (patch: Partial<AppSettings>) => {
-      setSettings({ ...settingsRef.current, ...patch });
+  // Page zoom follows the stored level. It also runs for the optimistic local update,
+  // so the window zooms as soon as a shortcut or the Settings select changes it.
+  const uiZoomPercent = normalizeUiZoom(settings.uiZoomPercent);
+  useEffect(() => {
+    getApi()?.app.setZoomFactor(uiZoomPercent / 100);
+  }, [uiZoomPercent]);
+
+  // Every settings write bumps the revision. Main applies writes in order, so only
+  // the newest response is used: an older one would roll back a newer optimistic
+  // change (for example the second of two quick Ctrl + presses).
+  const settingsRevision = useRef(0);
+  const saveSettings = useCallback(
+    async (patch: Partial<AppSettings>, optimistic: AppSettings) => {
+      const revision = ++settingsRevision.current;
+      setSettings(optimistic);
       const api = getApi();
-      if (api) setSettings(await api.settings.update(patch));
+      if (!api) return;
+      const saved = await api.settings.update(patch);
+      if (revision === settingsRevision.current) setSettings(saved);
     },
     [setSettings]
+  );
+
+  const updateSettings = useCallback(
+    (patch: Partial<AppSettings>) => saveSettings(patch, { ...settingsRef.current, ...patch }),
+    [saveSettings]
   );
 
   const changeLanguage = useCallback(
@@ -109,10 +129,9 @@ export function useAppRuntime(fallbackSettings: AppSettings): AppRuntime {
     (providerId: AiProviderId) => {
       const current = settingsRef.current;
       const next = { ...current, aiConnector: { ...current.aiConnector, activeProviderId: providerId } };
-      setSettings(next);
-      void getApi()?.settings.update({ aiConnector: next.aiConnector }).then(setSettings);
+      void saveSettings({ aiConnector: next.aiConnector }, next);
     },
-    [setSettings]
+    [saveSettings]
   );
 
   const refreshProviders = useCallback(async () => {
@@ -138,10 +157,9 @@ export function useAppRuntime(fallbackSettings: AppSettings): AppRuntime {
           authModeByProvider: { ...current.aiConnector.authModeByProvider, [providerId]: authMode }
         }
       };
-      setSettings(next);
-      await api?.settings.update({ aiConnector: next.aiConnector }).then(setSettings);
+      await saveSettings({ aiConnector: next.aiConnector }, next);
     },
-    [setSettings]
+    [saveSettings]
   );
 
   const disconnectProvider = useCallback(async (providerId: AiProviderId) => {

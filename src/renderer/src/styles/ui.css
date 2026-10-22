@@ -16,11 +16,14 @@ body,
   height: 100%;
 }
 
+/* The window is at least 1100 x 700 device px. At the largest UI zoom (150%) that
+   is about 730 x 460 CSS px, so the minimum stays below it. If content still does
+   not fit, the page scrolls instead of cutting controls off. */
 body {
   margin: 0;
-  min-width: 980px;
-  min-height: 640px;
-  overflow: hidden;
+  min-width: 720px;
+  min-height: 460px;
+  overflow: auto;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);

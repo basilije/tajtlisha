@@ -264,4 +264,10 @@ describe('scheduleStartupCheck', () => {
 
     expect(service.check).not.toHaveBeenCalled();
   });
+
+  it('turns GitHub HTML release notes into plain text', () => {
+    expect(
+      normalizeReleaseNotes('<h3>Fixed</h3>\n<ul>\n<li>The ffmpeg check &amp; Settings</li>\n<li>Publish step</li>\n</ul>')
+    ).toBe('Fixed\n\n- The ffmpeg check & Settings\n\n- Publish step');
+  });
 });

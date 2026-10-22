@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { AppSettings } from '../../shared/types/settings';
+import { normalizeUiZoom } from '../../shared/ui-zoom';
 import { DEFAULT_APP_SETTINGS } from './defaults';
 import { rejectSecretFields } from './secret-fields';
 
@@ -22,7 +23,8 @@ export class SettingsStore {
 
   async get(): Promise<AppSettings> {
     const stored = await this.readStoredSettings();
-    return mergeSettings(DEFAULT_APP_SETTINGS, stored);
+    // Hand-edited files go through the same normalization as patches.
+    return normalizeSettings(mergeSettings(DEFAULT_APP_SETTINGS, stored));
   }
 
   async update(patch: Partial<AppSettings>): Promise<AppSettings> {
@@ -107,6 +109,7 @@ function normalizeSettings(settings: AppSettings): AppSettings {
   return {
     ...settings,
     neverModifyOriginalVideo: true,
+    uiZoomPercent: normalizeUiZoom(settings.uiZoomPercent),
     aiConnector: {
       ...settings.aiConnector,
       maxLinesPerCaption: settings.aiConnector.maxLinesPerCaption === 1 ? 1 : 2

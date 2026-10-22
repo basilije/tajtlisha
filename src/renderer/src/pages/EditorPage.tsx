@@ -13,6 +13,9 @@ import { FRAME_MS } from '../components/preview/playback';
 import { StyleDrawer } from '../components/preview/StyleDrawer';
 import { TrimBar, type TrimBarCaption } from '../components/preview/TrimBar';
 import { VideoPreview, type ExactFrame, type VideoPreviewHandle } from '../components/preview/VideoPreview';
+import { SplitHandle } from '../components/shell/SplitHandle';
+import { SPLITTER_PX } from '../hooks/editorLayout';
+import { useEditorLayout } from '../hooks/useEditorLayout';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { usePlayhead } from '../hooks/usePlayhead';
 import type { Workspace } from '../hooks/useWorkspace';
@@ -59,6 +62,8 @@ export function EditorPage({
   const [exactBusy, setExactBusy] = useState(false);
   const exactRequestRef = useRef(0);
   const [localNotice, setLocalNotice] = useState<string | null>(null);
+  const [styleOpen, setStyleOpen] = useState(false);
+  const layout = useEditorLayout();
 
   const inputPath = source?.inputPath ?? null;
   // A missing file has no playable URL. The banner above the page asks for it.
@@ -191,8 +196,13 @@ export function EditorPage({
     return (PROJECT_LANGUAGES as readonly string[]).includes(code) ? code : 'auto';
   };
 
+  // Until the workspace is measured, the CSS fallback template applies.
+  const workspaceColumns = layout.measured
+    ? `${layout.captions.value}px ${SPLITTER_PX}px minmax(0, 1fr)`
+    : undefined;
+
   return (
-    <div className="editor-workspace">
+    <div className="editor-workspace" ref={layout.workspaceRef} style={{ gridTemplateColumns: workspaceColumns }}>
       <section className="editor-column editor-column-main" aria-label={t('shell.areas.captions')}>
         <div className="editor-generate" data-step-target="generate" tabIndex={-1}>
           <GeneratePanel
@@ -257,7 +267,22 @@ export function EditorPage({
         </div>
       </section>
 
-      <section className="editor-column editor-column-side" aria-label={t('shell.areas.preview')}>
+      <SplitHandle
+        orientation="vertical"
+        label={t('shell.layout.resizeColumns')}
+        value={layout.captions.value}
+        min={layout.captions.min}
+        max={layout.captions.max}
+        onValueChange={layout.captions.set}
+        onValueCommit={layout.captions.commit}
+        onReset={layout.captions.reset}
+      />
+
+      <section
+        className={styleOpen ? 'editor-column editor-column-side has-style-drawer' : 'editor-column editor-column-side'}
+        ref={layout.sideRef}
+        aria-label={t('shell.areas.preview')}
+      >
         <div className="editor-preview-head">
           <div className="segmented" role="group" aria-label={t('shell.track.label')}>
             {(['original', 'translation'] as const satisfies readonly PreviewTrack[]).map((track) => (
@@ -306,7 +331,24 @@ export function EditorPage({
           )}
         </div>
 
+        {styleOpen && (
+          <SplitHandle
+            orientation="horizontal"
+            reverse
+            label={t('shell.layout.resizeStyle')}
+            value={layout.styleDrawer.value}
+            min={layout.styleDrawer.min}
+            max={layout.styleDrawer.max}
+            onValueChange={layout.styleDrawer.set}
+            onValueCommit={layout.styleDrawer.commit}
+            onReset={layout.styleDrawer.reset}
+          />
+        )}
+
         <StyleDrawer
+          open={styleOpen}
+          onOpenChange={setStyleOpen}
+          height={styleOpen ? layout.styleDrawer.value : undefined}
           style={project.style}
           onChange={(patch: Partial<SubtitleStyle>) => dispatch({ type: 'style/set', patch })}
           onApplyPreset={(presetId: SubtitlePresetId) => dispatch({ type: 'style/applyPreset', presetId })}

@@ -32,6 +32,8 @@ const baseResources = {
         general: {
           uiLanguage: 'Interface language',
           uiLanguageHint: 'Changes menus and labels only. Video and subtitle languages stay the same.',
+          uiZoom: 'Interface size',
+          uiZoomHint: 'Scales text and controls. Shortcuts: Ctrl + to enlarge, Ctrl - to shrink, Ctrl 0 to reset.',
           targetLanguage: 'Default translation language',
           targetLanguageHint: 'Target for new projects. Each project can change it.',
           notSet: 'Not set'
@@ -182,6 +184,8 @@ const baseResources = {
         general: {
           uiLanguage: 'Jezik interfejsa',
           uiLanguageHint: 'Menja samo menije i oznake. Jezici videa i titlova se ne menjaju.',
+          uiZoom: 'Veličina interfejsa',
+          uiZoomHint: 'Menja veličinu teksta i kontrola. Prečice: Ctrl + za uvećanje, Ctrl - za smanjenje, Ctrl 0 za vraćanje na 100%.',
           targetLanguage: 'Podrazumevani jezik prevoda',
           targetLanguageHint: 'Cilj za nove projekte. Svaki projekat može da ga promeni.',
           notSet: 'Nije podešeno'
@@ -332,6 +336,8 @@ const baseResources = {
         general: {
           uiLanguage: 'Језик интерфејса',
           uiLanguageHint: 'Мења само меније и ознаке. Језици видеа и титлова се не мењају.',
+          uiZoom: 'Величина интерфејса',
+          uiZoomHint: 'Мења величину текста и контрола. Пречице: Ctrl + за увећање, Ctrl - за смањење, Ctrl 0 за враћање на 100%.',
           targetLanguage: 'Подразумевани језик превода',
           targetLanguageHint: 'Циљ за нове пројекте. Сваки пројекат може да га промени.',
           notSet: 'Није подешено'

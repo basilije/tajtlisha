@@ -1,10 +1,12 @@
 import type { AppSettings } from '../../shared/types/settings';
+import { DEFAULT_UI_ZOOM_PERCENT } from '../../shared/ui-zoom';
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   uiLanguage: 'system',
   autosaveEnabled: true,
   recentFilesEnabled: true,
   neverModifyOriginalVideo: true,
+  uiZoomPercent: DEFAULT_UI_ZOOM_PERCENT,
   exportDefaults: {
     exportOriginalSrt: true,
     exportTranslatedSrt: true,

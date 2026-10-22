@@ -166,18 +166,41 @@ export function isUpdateSupported(input: {
 /** Converts electron-updater's release notes (string, per-version array or null) into plain text. */
 export function normalizeReleaseNotes(notes: string | ReleaseNoteEntry[] | null | undefined): string | undefined {
   if (typeof notes === 'string') {
-    return notes.trim() || undefined;
+    return htmlToText(notes) || undefined;
   }
   if (!Array.isArray(notes)) {
     return undefined;
   }
   const sections = notes
     .map((entry) => {
-      const body = entry.note?.trim() ?? '';
+      const body = htmlToText(entry.note ?? '');
       return body ? `${entry.version}\n${body}` : '';
     })
     .filter(Boolean);
   return sections.length > 0 ? sections.join('\n\n') : undefined;
+}
+
+/**
+ * GitHub delivers release notes as rendered HTML. The About section shows plain
+ * text, so keep the structure (headings, list items, paragraphs) and drop tags.
+ */
+export function htmlToText(html: string): string {
+  return html
+    .replace(/\r/g, '')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<\/(h[1-6]|p|li|ul|ol|div|tr)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .trim();
 }
 
 /** Runs one check shortly after startup so the window is visible before the network call. */
