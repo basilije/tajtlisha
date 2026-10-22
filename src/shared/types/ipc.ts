@@ -155,7 +155,7 @@ export type TajtlishaApi = {
     /**
      * Sets the Chromium page zoom of this window (1 = 100%). Applied in the
      * preload with webFrame, so it is local to the renderer and needs no IPC
-     * channel. Values outside 0.5..2 or not finite are ignored.
+     * channel. Factors are clamped to 0.5..2; non-finite values are ignored.
      */
     setZoomFactor(factor: number): void;
     /**

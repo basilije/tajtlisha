@@ -512,6 +512,10 @@ body.is-resizing-row video {
   min-height: 220px;
   overflow: hidden;
 }
+/* With the style drawer open the video may get smaller, so the drawer stays usable in short windows. */
+.editor-column-side.has-style-drawer .editor-preview {
+  min-height: 160px;
+}
 .editor-trim {
   flex: none;
 }
@@ -519,16 +523,22 @@ body.is-resizing-row video {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  flex: 0 1 auto;
+  flex: none;
   max-height: 46%;
   min-height: 0;
   overflow-y: auto;
 }
 /* An explicit height from the horizontal splitter replaces the percentage cap.
-   It may still shrink, so a short window never pushes the video below its minimum. */
+   It never shrinks below that height; a column too short for it scrolls instead. */
 .editor-column-side > .style-drawer.style-drawer-sized {
-  flex: 0 1 auto;
+  flex: none;
   max-height: none;
+}
+/* Small window at a large UI zoom: the side column scrolls rather than cutting
+   off the trim controls or the style drawer. */
+.editor-column-side {
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 /* Negative margins pull the splitter into the column's 8 px gaps, so the space between the panels stays 12 px. */
 .editor-column-side > .split-handle-horizontal {

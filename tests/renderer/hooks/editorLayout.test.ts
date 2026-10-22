@@ -5,6 +5,7 @@ import {
   MIN_CAPTIONS_PX,
   MIN_PREVIEW_PX,
   MIN_STYLE_DRAWER_PX,
+  MIN_VIDEO_AREA_PX,
   SPLITTER_PX,
   captionsFractionFor,
   captionsWidthBounds,
@@ -79,15 +80,19 @@ describe('style drawer height', () => {
 
   it('keeps the video area above the splitter at its minimum', () => {
     const bounds = styleDrawerBounds(1000);
-    expect(bounds.max).toBe(1000 - 220 - SPLITTER_PX);
+    expect(bounds.max).toBe(1000 - MIN_VIDEO_AREA_PX - SPLITTER_PX);
     expect(styleDrawerPx(5000, 1000)).toBe(bounds.max);
-    expect(clampStyleDrawerPx(500, 600)).toBe(368);
+    expect(clampStyleDrawerPx(500, 600)).toBe(600 - MIN_VIDEO_AREA_PX - SPLITTER_PX);
   });
 
-  it('keeps the drawer at its minimum in a short column', () => {
+  it('keeps the drawer at its minimum when there is room for it', () => {
     expect(styleDrawerPx(10, 1000)).toBe(MIN_STYLE_DRAWER_PX);
-    expect(styleDrawerPx(null, 300)).toBe(MIN_STYLE_DRAWER_PX);
-    expect(styleDrawerBounds(300)).toEqual({ min: MIN_STYLE_DRAWER_PX, max: MIN_STYLE_DRAWER_PX });
+  });
+
+  it('keeps the drawer minimum in a short column (the column scrolls instead)', () => {
+    expect(250 - MIN_VIDEO_AREA_PX - SPLITTER_PX).toBeLessThan(MIN_STYLE_DRAWER_PX);
+    expect(styleDrawerBounds(250)).toEqual({ min: MIN_STYLE_DRAWER_PX, max: MIN_STYLE_DRAWER_PX });
+    expect(styleDrawerPx(null, 250)).toBe(MIN_STYLE_DRAWER_PX);
   });
 });
 

@@ -17,8 +17,11 @@ export const MIN_PREVIEW_PX = 320;
 /** Default drawer height as a share of the side column height. */
 export const DEFAULT_STYLE_DRAWER_SHARE = 0.4;
 export const MIN_STYLE_DRAWER_PX = 140;
-/** The video preview keeps at least this height. Matches `.editor-preview { min-height }` in app.css. */
-export const MIN_VIDEO_AREA_PX = 220;
+/**
+ * The video preview keeps at least this height while the style drawer is open.
+ * Matches `.editor-column-side.has-style-drawer .editor-preview { min-height }` in app.css.
+ */
+export const MIN_VIDEO_AREA_PX = 160;
 
 export const SPLITTER_STEP_PX = 16;
 export const SPLITTER_LARGE_STEP_PX = 64;
@@ -79,6 +82,9 @@ export function captionsFractionFor(widthPx: number, workspaceWidthPx: number): 
  * the trim bar and the gaps around them (see useEditorLayout).
  */
 export function styleDrawerBounds(columnHeightPx: number): LayoutRange {
+  // The drawer always gets at least its minimum. When the column is too short for
+  // that (small window, large UI zoom), the side column scrolls instead of
+  // squeezing the drawer, so the rendered height always equals the value.
   return {
     min: MIN_STYLE_DRAWER_PX,
     max: Math.max(MIN_STYLE_DRAWER_PX, columnHeightPx - MIN_VIDEO_AREA_PX - SPLITTER_PX)
