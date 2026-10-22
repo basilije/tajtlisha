@@ -40,8 +40,9 @@ jobs:
           if [ -n "$existing" ]; then
             echo "Draft or release for ${GITHUB_REF_NAME} already exists (id ${existing})."
           else
+            node scripts/release-notes.mjs "${GITHUB_REF_NAME}" > release-notes.md
             gh release create "${GITHUB_REF_NAME}" --draft --verify-tag \
-              --title "Tajtlisha ${GITHUB_REF_NAME}" --generate-notes
+              --title "Tajtlisha ${GITHUB_REF_NAME}" --notes-file release-notes.md
           fi
 
   build:
