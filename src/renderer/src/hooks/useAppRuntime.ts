@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { AiProviderCapabilities, AiProviderId, AuthMode, ProviderModelDescriptor, ProviderStatus, TestConnectionResult } from '../../../shared/types/ai';
 import type { TajtlishaApi } from '../../../shared/types/ipc';
 import type { AppSettings, UiLanguage } from '../../../shared/types/settings';
+import { normalizeUiZoom } from '../../../shared/ui-zoom';
 import { resolveUiLanguage } from '../i18n';
 
 export type AppRuntimePhase = 'loading' | 'ready' | 'error';
@@ -87,6 +88,13 @@ export function useAppRuntime(fallbackSettings: AppSettings): AppRuntime {
   }, [applyLanguage, attempt, setSettings]);
 
   const reload = useCallback(() => setAttempt((value) => value + 1), []);
+
+  // Page zoom follows the stored level. It also runs for the optimistic local update,
+  // so the window zooms as soon as a shortcut or the Settings select changes it.
+  const uiZoomPercent = normalizeUiZoom(settings.uiZoomPercent);
+  useEffect(() => {
+    getApi()?.app.setZoomFactor(uiZoomPercent / 100);
+  }, [uiZoomPercent]);
 
   const updateSettings = useCallback(
     async (patch: Partial<AppSettings>) => {

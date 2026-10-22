@@ -4,6 +4,7 @@ import { I18nextProvider } from 'react-i18next';
 import type { AppSettings } from '../../shared/types/settings';
 import { createI18n, resolveUiLanguage } from './i18n';
 import { useAppRuntime } from './hooks/useAppRuntime';
+import { useZoomShortcuts } from './hooks/useZoomShortcuts';
 import { StartupScreen } from './components/shell/StartupScreen';
 import { WorkspaceShell } from './components/shell/WorkspaceShell';
 
@@ -17,6 +18,7 @@ const EMPTY_SETTINGS: AppSettings = {
   autosaveEnabled: true,
   recentFilesEnabled: true,
   neverModifyOriginalVideo: true,
+  uiZoomPercent: 100,
   exportDefaults: {
     exportOriginalSrt: true,
     exportTranslatedSrt: true,
@@ -56,6 +58,12 @@ export function App({ initialSettings = EMPTY_SETTINGS }: AppProps): ReactElemen
 
 function AppRoot({ fallbackSettings }: { fallbackSettings: AppSettings }): ReactElement {
   const runtime = useAppRuntime(fallbackSettings);
+  // Mounted at app level, so Ctrl + / Ctrl - / Ctrl 0 also work on the start screen and in Settings.
+  useZoomShortcuts({
+    zoomPercent: runtime.settings.uiZoomPercent,
+    enabled: runtime.phase === 'ready',
+    onZoomChange: (uiZoomPercent) => void runtime.updateSettings({ uiZoomPercent })
+  });
 
   if (runtime.phase === 'loading') {
     return <StartupScreen kind="loading" />;

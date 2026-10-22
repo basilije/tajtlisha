@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from 'electron';
 import { IPC_CHANNELS as C, type QuitReadyResult, type TajtlishaApi } from '../shared/types/ipc';
 import type { JobProgressEvent } from '../shared/types/jobs';
 import type { UpdateState } from '../shared/types/updates';
@@ -9,6 +9,12 @@ function subscribe<T>(channel: string, listener: (payload: T) => void): () => vo
   return () => {
     ipcRenderer.removeListener(channel, handler);
   };
+}
+
+/** Page zoom is per window, so webFrame applies it here; main has no role in it. */
+function applyZoomFactor(factor: number): void {
+  if (!Number.isFinite(factor)) return;
+  webFrame.setZoomFactor(Math.min(2, Math.max(0.5, factor)));
 }
 
 const api: TajtlishaApi = {
@@ -57,6 +63,7 @@ const api: TajtlishaApi = {
   },
   app: {
     getInfo: () => ipcRenderer.invoke(C.appGetInfo),
+    setZoomFactor: (factor) => applyZoomFactor(factor),
     onPrepareQuit: (listener) => {
       quitListeners.add(listener);
       return () => {

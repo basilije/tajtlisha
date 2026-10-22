@@ -32,6 +32,13 @@ Pravila:
 - ako output folder nije izabran, app pita korisnika pri exportu,
 - temporary fajlovi se mogu obrisati iz Advanced sekcije.
 
+### Velicina interfejsa
+
+- Settings > General bira `uiZoomPercent` (80% do 150%, koraci 5% do 130%, zatim 10%; podrazumevano 100%).
+- Ctrl + uvecava, Ctrl - smanjuje, Ctrl 0 vraca na 100%. Precice rade i u poljima za unos i na Settings stranici.
+- Zoom je Chromium page zoom (skalira tekst i sve elemente), primenjuje se u preload-u preko `webFrame`, bez posebnog IPC kanala.
+- Vrednost se pamti u settings store-u, a nevazece vrednosti u fajlu se svode na najblizi nivo (ili 100%).
+
 ## Language & localization
 
 Opcije:

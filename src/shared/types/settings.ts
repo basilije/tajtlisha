@@ -31,6 +31,8 @@ export type AppSettings = {
   autosaveEnabled: boolean;
   recentFilesEnabled: boolean;
   neverModifyOriginalVideo: true;
+  /** Whole-UI page zoom in percent, one of UI_ZOOM_LEVELS. */
+  uiZoomPercent: number;
   exportDefaults: ExportSettings;
   aiConnector: AiConnectorSettings;
 };

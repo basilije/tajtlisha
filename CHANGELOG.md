@@ -6,6 +6,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+### Added
+- Interface size: Ctrl + / Ctrl - / Ctrl 0 zoom the whole window (80% to 150%). The level is also set in Settings > General.
+
 ### Fixed
 - Release notes in Settings > About are shown as plain text instead of raw HTML from GitHub.
 

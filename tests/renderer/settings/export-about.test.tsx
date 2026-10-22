@@ -107,7 +107,8 @@ describe('about section', () => {
           version: '0.2.0',
           platform: options.info?.platform ?? 'linux',
           isPackaged: options.info?.isPackaged ?? true
-        })
+        }),
+        setZoomFactor: () => undefined
       },
       updates: {
         getState: async () => state,
