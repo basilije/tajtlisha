@@ -10,6 +10,7 @@ import { appErrorKey, describeAppError } from '../utils/error-message';
 import { truncateDetail } from './jobOutcome';
 import {
   captionIssuesFor,
+  captionsForExport,
   defaultExportOutputs,
   fileNameOf,
   folderOf,
@@ -144,10 +145,12 @@ export function useExportDialog({
     [api, t]
   );
 
+  // Captions outside the trim are not exported, so they must not block or count as missing.
   const requireTranslation = outputsNeedTranslation(outputs);
-  const blocking = blockingIssueCount(captionIssuesFor(project, settings, false));
+  const exported = { ...project, captions: captionsForExport(project) };
+  const blocking = blockingIssueCount(captionIssuesFor(exported, settings, false));
   const missingTranslations = requireTranslation
-    ? project.captions.filter((caption) => caption.translation.trim() === '').length
+    ? exported.captions.filter((caption) => caption.translation.trim() === '').length
     : 0;
 
   return {

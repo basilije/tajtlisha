@@ -107,6 +107,12 @@ export const shellStrings = {
       generate: 'AI steps'
     },
     dismiss: 'Dismiss',
+    projectLoad: {
+      title: 'The saved project could not be loaded',
+      body: 'The saved project on disk is untouched. Try loading it again, or open a video to start a new project.',
+      retry: 'Try loading again',
+      openVideo: 'Open a new video'
+    },
     workspace: 'Editor'
   },
   'sr-Latn': {
@@ -210,6 +216,12 @@ export const shellStrings = {
       generate: 'AI koraci'
     },
     dismiss: 'Zatvori',
+    projectLoad: {
+      title: 'Sačuvani projekat nije mogao da se učita',
+      body: 'Sačuvani projekat na disku nije menjan. Pokušaj ponovo da ga učitaš ili otvori video da započneš novi projekat.',
+      retry: 'Pokušaj ponovo da učitaš',
+      openVideo: 'Otvori novi video'
+    },
     workspace: 'Editor'
   },
   'sr-Cyrl': {
@@ -313,6 +325,12 @@ export const shellStrings = {
       generate: 'AI кораци'
     },
     dismiss: 'Затвори',
+    projectLoad: {
+      title: 'Сачувани пројекат није могао да се учита',
+      body: 'Сачувани пројекат на диску није мењан. Покушај поново да га учиташ или отвори видео да започнеш нови пројекат.',
+      retry: 'Покушај поново да учиташ',
+      openVideo: 'Отвори нови видео'
+    },
     workspace: 'Едитор'
   }
 };

@@ -89,6 +89,8 @@ export function ProviderPanel({
     };
   }, [providerId, connected, onListModels]);
 
+  // "Default" is stored as ''. Settings patches merge maps deeply, so a deleted key would keep its old model.
+  // Requests treat a blank id as absent (see optionalModelId in useWorkspace).
   function updateModel(kind: 'transcription' | 'translation', modelId: string): void {
     const connector = settings.aiConnector;
     onSettingsChange?.({

@@ -44,6 +44,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.app-loading {
+  color: var(--text-muted);
+  display: grid;
+  flex: 1;
+  place-items: center;
+  font-size: var(--text-sm);
+}
 .app-notice > .btn-icon {
   margin-left: auto;
 }

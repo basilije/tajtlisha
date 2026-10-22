@@ -1,12 +1,25 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ProjectDocument, ProjectLoadResult } from '../../../src/shared/types/project';
+import type { ProjectDocument, ProjectLoadResult, ProjectSource } from '../../../src/shared/types/project';
 import { createEmptyProject } from '../../../src/renderer/src/state/project-reducer';
 import { AUTOSAVE_DELAY_MS, useProjectStore } from '../../../src/renderer/src/state/useProjectStore';
 import { createFakeApi, type FakeApi } from './fakeApi';
 
 function savedProject(): ProjectDocument {
   return { ...createEmptyProject({ targetLanguage: 'en' }), id: 'saved-1', revision: 1 };
+}
+
+function clipSource(inputPath: string): ProjectSource {
+  return {
+    inputPath,
+    fileUrl: 'tajtlisha-media://clip',
+    durationMs: 5000,
+    width: 1,
+    height: 1,
+    hasAudio: false,
+    fileSizeBytes: 1000,
+    mtimeMs: 1700000000000
+  };
 }
 
 function loaded(project: ProjectDocument = savedProject(), sourceStatus: ProjectLoadResult['sourceStatus'] = 'ok'): ProjectLoadResult {
@@ -246,7 +259,8 @@ describe('useProjectStore', () => {
     await flushPromises();
 
     expect(result.current.ready).toBe(true);
-    expect(result.current.saveError).toBe('corrupt file');
+    expect(result.current.loadError).toBe('corrupt file');
+    expect(result.current.saveError).toBeNull();
 
     act(() => {
       result.current.dispatch({ type: 'style/set', patch: { fontSizePercent: 6 } });
@@ -258,6 +272,152 @@ describe('useProjectStore', () => {
       window.dispatchEvent(new Event('beforeunload'));
     });
     expect(fake.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps a manually edited project when a delayed load resolves afterwards', async () => {
+    vi.useFakeTimers();
+    let resolveLoad: (value: ProjectLoadResult | null) => void = () => undefined;
+    fake.loadLast.mockReturnValue(new Promise((resolve) => (resolveLoad = resolve)));
+    const { result } = renderHook(() => useProjectStore({ targetLanguage: 'en', api: fake.api }));
+
+    act(() => {
+      result.current.dispatch({ type: 'source/set', source: clipSource('/clips/new.mp4') });
+    });
+    await act(async () => {
+      resolveLoad(loaded(savedProject()));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(result.current.ready).toBe(true);
+    expect(result.current.state.project.id).not.toBe('saved-1');
+    expect(result.current.state.project.source?.inputPath).toBe('/clips/new.mp4');
+  });
+
+  it('keeps the saved file untouched after a failed load until a new project is started, then autosaves the new one', async () => {
+    vi.useFakeTimers();
+    fake.loadLast.mockRejectedValueOnce(new Error("Error invoking remote method 'project:loadLast': Error: [UNKNOWN] corrupt file"));
+    const { result } = renderHook(() => useProjectStore({ targetLanguage: 'en', api: fake.api }));
+    await flushPromises();
+    expect(result.current.loadError).toBe('corrupt file');
+
+    // Edits alone do not write: the blank project is not the saved one.
+    act(() => {
+      result.current.dispatch({ type: 'style/set', patch: { fontSizePercent: 6 } });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS * 2);
+    });
+    expect(fake.save).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.dispatch({ type: 'source/set', source: clipSource('/clips/new.mp4') });
+    });
+    expect(result.current.loadError).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_DELAY_MS);
+    });
+    await flushPromises();
+
+    expect(fake.save).toHaveBeenCalledTimes(1);
+    expect(fake.save.mock.calls[0][0].id).not.toBe('saved-1');
+    expect(fake.save.mock.calls[0][0].source?.inputPath).toBe('/clips/new.mp4');
+  });
+
+  it('Retry loads the saved project again and applies it when the load succeeds', async () => {
+    fake.loadLast.mockRejectedValueOnce(new Error('[UNKNOWN] corrupt file')).mockResolvedValueOnce(loaded());
+    const { result } = renderHook(() => useProjectStore({ targetLanguage: 'en', api: fake.api }));
+    await waitFor(() => expect(result.current.loadError).toBe('corrupt file'));
+
+    act(() => result.current.retryLoad());
+    expect(result.current.ready).toBe(false);
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    expect(fake.loadLast).toHaveBeenCalledTimes(2);
+    expect(result.current.loadError).toBeNull();
+    expect(result.current.state.project.id).toBe('saved-1');
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it('keeps the highest pending revision when two saves fail, so Retry does not write the older one', async () => {
+    vi.useFakeTimers();
+    fake.save.mockRejectedValueOnce(new Error('[UNKNOWN] disk full')).mockRejectedValueOnce(new Error('[UNKNOWN] disk full'));
+    const { result } = renderHook(() => useProjectStore({ targetLanguage: 'en', api: fake.api }));
+    await flushPromises();
+
+    act(() => {
+      result.current.dispatch({ type: 'style/set', patch: { fontSizePercent: 6 } });
+    });
+    let first: Promise<unknown> = Promise.resolve();
+    act(() => {
+      first = result.current.flush();
+    });
+    act(() => {
+      result.current.dispatch({ type: 'style/set', patch: { fontSizePercent: 9 } });
+    });
+    let second: Promise<unknown> = Promise.resolve();
+    act(() => {
+      second = result.current.flush();
+    });
+    await act(async () => {
+      await Promise.all([first, second]);
+    });
+    expect(fake.save).toHaveBeenCalledTimes(2);
+
+    await act(() => result.current.flush());
+    expect(fake.save).toHaveBeenCalledTimes(3);
+    expect(fake.save.mock.calls[2][0].style.fontSizePercent).toBe(9);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it('serializes saves: a second flush waits for the write in flight', async () => {
+    vi.useFakeTimers();
+    let finishFirst: (value: { savedRevision: number }) => void = () => undefined;
+    fake.save.mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)));
+    const { result } = renderHook(() => useProjectStore({ targetLanguage: 'en', api: fake.api }));
+    await flushPromises();
+
+    act(() => {
+      result.current.dispatch({ type: 'style/set', patch: { fontSizePercent: 6 } });
+    });
+    act(() => {
+      void result.current.flush();
+    });
+    act(() => {
+      result.current.dispatch({ type: 'style/set', patch: { fontSizePercent: 9 } });
+    });
+    act(() => {
+      void result.current.flush();
+    });
+    expect(fake.save).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      // The first write covered revision 1; revision 2 (the newer edit) is still pending.
+      finishFirst({ savedRevision: 1 });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fake.save).toHaveBeenCalledTimes(2);
+    expect(fake.save.mock.calls[1][0].style.fontSizePercent).toBe(9);
+  });
+
+  it('flush resolves with ok when saved and with the error detail when the write fails', async () => {
+    fake.save.mockRejectedValueOnce(new Error("Error invoking remote method 'project:save': Error: [UNKNOWN] disk full"));
+    const { result } = renderHook(() => useProjectStore({ targetLanguage: 'en', api: fake.api }));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => {
+      result.current.dispatch({ type: 'style/set', patch: { fontSizePercent: 6 } });
+    });
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.flush();
+    });
+    expect(outcome).toEqual({ ok: false, error: 'disk full' });
+
+    let retried: unknown;
+    await act(async () => {
+      retried = await result.current.flush();
+    });
+    expect(retried).toEqual({ ok: true });
   });
 
   it('exposes the load sourceStatus, and null when nothing was saved', async () => {
