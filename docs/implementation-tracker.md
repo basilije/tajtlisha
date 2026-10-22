@@ -59,10 +59,18 @@ or update path.
 | --- | --- | --- | --- |
 | R1 | Manual translation overwrite, startup load race, overlapping failed saves, load failure blocking persistence, quit with unsaved data (Retry / Quit / Cancel), empty model id, Space on focused controls, export validation clipped to trim | `fix/pre-release-review` | merged |
 
+## UI polish (after v0.2.1)
+
+| # | Task | Branch | Status |
+| --- | --- | --- | --- |
+| U1 | Resizable editor panels: captions/preview splitter, preview/style-drawer splitter, keyboard, persisted in localStorage | `feat/resizable-panes` | merged |
+| U2 | Whole-UI zoom 80-150% (Ctrl + / - / 0, Settings > General), `uiZoomPercent` setting, preload `webFrame` zoom | `feat/ui-zoom` | merged |
+| U3 | Sol review fixes: settings response ordering, layout at 150% zoom on the minimum window, splitter focus vs playback keys | `fix/panes-zoom-review` | merged |
+
 ## Backlog for v0.2.1
 
 - Exact-frame preview and preview-proxy recovery must be invalidated by content/source generation, not only path.
-- Settings optimistic updates: reconcile outstanding patches; show rejected updates.
+- Settings optimistic updates: show rejected updates (stale responses are ignored since U3).
 - The "auto-detect spoken language" switch has no effect: implement or remove.
 - Playback re-renders the whole caption table about 15 times per second; memoize rows, compute pending rows once.
 - Preview shadow differs from ASS (opacity, no shadow with box).
@@ -149,3 +157,5 @@ or update path.
 - 2026-10-22: v0.2.1 released fully by the workflow (build Linux + Windows, publish). End-to-end update test: the
   released v0.2.0 AppImage found v0.2.1 (with release notes) and downloaded it. Release notes arrive as HTML;
   converted to plain text on develop (ships in the next release).
+- 2026-10-22: U1 and U2 merged (Haiku workers), U3 from the Sol review. Checked in the built app with Playwright and
+  capturePage at 100/125/150% on a 1100x700 window: splitters drag and persist, side column scrolls when short.
