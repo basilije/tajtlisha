@@ -117,4 +117,20 @@ describe('checkFfmpegCapabilities', () => {
     ];
     expect(capabilities.missing).toEqual(flags.filter(([present]) => !present).map(([, name]) => name));
   }, 30_000);
+
+  it('reads the two-character flag column of ffmpeg 8', () => {
+    const names = parseFilterNames(
+      [
+        'Filters:',
+        '  T.. = Timeline support',
+        ' .. ass               V->V       Render ASS subtitles onto input video using the libass library.',
+        ' .. subtitles         V->V       Render text subtitles onto input video using the libass library.',
+        ' T. scale             V->V       Scale the input video size and/or convert the image format.'
+      ].join('\r\n')
+    );
+    expect(names.has('ass')).toBe(true);
+    expect(names.has('subtitles')).toBe(true);
+    expect(names.has('scale')).toBe(true);
+    expect(names.has('Timeline')).toBe(false);
+  });
 });
