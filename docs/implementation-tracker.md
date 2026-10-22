@@ -159,3 +159,4 @@ or update path.
   converted to plain text on develop (ships in the next release).
 - 2026-10-22: U1 and U2 merged (Haiku workers), U3 from the Sol review. Checked in the built app with Playwright and
   capturePage at 100/125/150% on a 1100x700 window: splitters drag and persist, side column scrolls when short.
+- 2026-10-22: v0.3.0 released (resizable panels, UI zoom, plain-text release notes).
