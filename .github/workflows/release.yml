@@ -1,0 +1,112 @@
+name: Release
+
+# Flow: create a draft release once, build each platform in parallel and upload its files to that draft,
+# then publish the draft. Two jobs never create the release themselves, so they cannot race.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches package.json version
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version v${version}" >&2
+            exit 1
+          fi
+
+      - name: Create the draft release if it does not exist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # /releases/tags/<tag> does not return drafts, so list releases and match the tag.
+          existing=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" \
+            --jq ".[] | select(.tag_name == \"${GITHUB_REF_NAME}\") | .id" | head -n 1)
+          if [ -n "$existing" ]; then
+            echo "Draft or release for ${GITHUB_REF_NAME} already exists (id ${existing})."
+          else
+            node scripts/release-notes.mjs "${GITHUB_REF_NAME}" > release-notes.md
+            gh release create "${GITHUB_REF_NAME}" --draft --verify-tag \
+              --title "Tajtlisha ${GITHUB_REF_NAME}" --notes-file release-notes.md
+          fi
+
+  build:
+    needs: draft
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            script: dist:linux
+            files: 'release/*/*.AppImage release/*/*.deb release/*/latest-linux.yml release/*/*.blockmap'
+          - os: windows-latest
+            script: dist:win
+            files: 'release/*/*-Setup-*.exe release/*/latest.yml release/*/*-Setup-*.exe.blockmap'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches package.json version
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version v${version}" >&2
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Fetches the platform's ffmpeg into vendor/ffmpeg, then typechecks, builds and packages it.
+      - name: Build installers (${{ matrix.script }})
+        shell: bash
+        run: pnpm ${{ matrix.script }}
+
+      - name: Upload installers and update manifests to the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob
+          files=()
+          for pattern in ${{ matrix.files }}; do
+            files+=("$pattern")
+          done
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No artifacts matched: ${{ matrix.files }}" >&2
+            exit 1
+          fi
+          printf 'Uploading:\n%s\n' "${files[@]}"
+          gh release upload "${GITHUB_REF_NAME}" "${files[@]}" --clobber
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false

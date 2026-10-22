@@ -11,6 +11,16 @@ import { millisecondsToSeconds, validateAudioExtractRequest, validatePath, valid
 
 type FfprobeStream = {
   codec_type?: string;
+  width?: number;
+  height?: number;
+  sample_aspect_ratio?: string;
+  tags?: { rotate?: string };
+  side_data_list?: Array<{ rotation?: number }>;
+};
+
+export type MediaRunOptions = {
+  signal?: AbortSignal;
+  onProgress?: (outTimeMs: number) => void;
 };
 
 type FfprobePayload = {
@@ -42,16 +52,20 @@ export class MediaService {
     ]);
     const payload = JSON.parse(result.stdout) as FfprobePayload;
     const durationSeconds = payload.format?.duration ? Number(payload.format.duration) : undefined;
+    const videoStream = payload.streams?.find((stream) => stream.codec_type === 'video');
+    const displaySize = videoStream ? displaySizeOf(videoStream) : undefined;
 
     return {
       inputPath: input.inputPath,
       durationMs: durationSeconds !== undefined && Number.isFinite(durationSeconds) ? Math.round(durationSeconds * 1000) : undefined,
       hasAudio: payload.streams?.some((stream) => stream.codec_type === 'audio') ?? false,
-      hasVideo: payload.streams?.some((stream) => stream.codec_type === 'video') ?? false
+      hasVideo: Boolean(videoStream),
+      width: displaySize?.width,
+      height: displaySize?.height
     };
   }
 
-  async trim(input: TrimRequest): Promise<TrimResult> {
+  async trim(input: TrimRequest, options: MediaRunOptions = {}): Promise<TrimResult> {
     validateTrimRequest(input);
 
     const durationMs = input.endMs - input.startMs;
@@ -59,9 +73,9 @@ export class MediaService {
       '-y',
       '-i',
       input.inputPath,
-      // Input-side seeking with stream copy is keyframe-boundary based. Keep
-      // seeking after the input and re-encode A/V so the requested boundaries
-      // are frame/sample accurate.
+      // Output-side seeking (after -i) with re-encoding. Input-side seeking is
+      // also frame accurate when transcoding (ffmpeg decodes and discards up to
+      // the seek point); it is only keyframe-bound with stream copy.
       '-ss',
       millisecondsToSeconds(input.startMs),
       '-t',
@@ -79,7 +93,7 @@ export class MediaService {
       '-avoid_negative_ts',
       'make_zero',
       input.outputPath
-    ]);
+    ], options);
 
     return {
       outputPath: input.outputPath,
@@ -87,7 +101,7 @@ export class MediaService {
     };
   }
 
-  async createPreviewProxy(inputPath: string, outputPath: string): Promise<void> {
+  async createPreviewProxy(inputPath: string, outputPath: string, options: MediaRunOptions = {}): Promise<void> {
     validatePath(inputPath, 'inputPath');
     validatePath(outputPath, 'outputPath');
 
@@ -99,6 +113,9 @@ export class MediaService {
       '0:v:0',
       '-map',
       '0:a:0?',
+      // yuv420p needs even dimensions; odd sources (e.g. 321x241) fail without this.
+      '-vf',
+      'scale=trunc(iw/2)*2:trunc(ih/2)*2',
       '-c:v',
       'libx264',
       '-preset',
@@ -114,10 +131,10 @@ export class MediaService {
       '-movflags',
       '+faststart',
       outputPath
-    ]);
+    ], options);
   }
 
-  async extractAudio(input: AudioExtractRequest): Promise<AudioExtractResult> {
+  async extractAudio(input: AudioExtractRequest, options: MediaRunOptions = {}): Promise<AudioExtractResult> {
     validateAudioExtractRequest(input);
 
     const args = ['-y'];
@@ -136,7 +153,7 @@ export class MediaService {
     args.push(...audioCodecArgs(input.format));
     args.push(input.outputPath);
 
-    await this.ffmpeg.run(args);
+    await this.ffmpeg.run(args, options);
 
     return {
       outputPath: input.outputPath,
@@ -146,12 +163,27 @@ export class MediaService {
   }
 }
 
+function displaySizeOf(stream: FfprobeStream): { width: number; height: number } | undefined {
+  if (!stream.width || !stream.height) return undefined;
+  const sideRotation = stream.side_data_list?.find((entry) => typeof entry.rotation === 'number')?.rotation;
+  const rotation = Math.abs(Number(sideRotation ?? stream.tags?.rotate ?? 0)) % 180;
+  // Anamorphic video: fold the sample aspect ratio into the width so the size
+  // is in square pixels (export scales to this size before drawing subtitles).
+  const [sarNum, sarDen] = (stream.sample_aspect_ratio ?? '1:1').split(':').map(Number);
+  const sar = sarNum > 0 && sarDen > 0 ? sarNum / sarDen : 1;
+  const width = Math.max(2, Math.floor((stream.width * sar) / 2) * 2);
+  // libx264 with yuv420p needs even dimensions.
+  const height = Math.max(2, Math.floor(stream.height / 2) * 2);
+  return rotation === 90 ? { width: height, height: width } : { width, height };
+}
+
 function audioCodecArgs(format: AudioExtractRequest['format']): string[] {
   switch (format) {
     case 'wav':
       return ['-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000'];
     case 'mp3':
-      return ['-acodec', 'libmp3lame', '-q:a', '2'];
+      // Speech-only upload for transcription: mono 16 kHz keeps clips far below the 25 MB API limit.
+      return ['-acodec', 'libmp3lame', '-ac', '1', '-ar', '16000', '-b:a', '64k'];
     case 'm4a':
       return ['-acodec', 'aac', '-b:a', '128k'];
   }

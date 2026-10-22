@@ -1,98 +1,291 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import type { GenerateSubtitlesRequest, GenerateSubtitlesResult } from '../../shared/types/ai';
-import type { SubtitleTrack } from '../../shared/types/subtitles';
+import { join } from 'node:path';
+import { AppError } from '../../shared/errors';
+import type {
+  CaptionTimingSource,
+  JobStage,
+  TranscribeClipRequest,
+  TranscribeClipResult,
+  TranslateCaptionsRequest,
+  TranslateCaptionsResult
+} from '../../shared/types/jobs';
+import type { CaptionRow, TrimRange } from '../../shared/types/project';
+import { FfmpegService } from '../ffmpeg';
 import { MediaService } from '../media';
-import { validatePath, validateTimeRange } from '../media/contracts';
+import { validatePath } from '../media/contracts';
+import { buildCaptionsFromSegments, buildCaptionsFromSpeechRegions, buildCaptionsFromWords, type CaptionBuildOptions, type CaptionDraft } from './caption-builder';
 import type { AiProviderRegistry } from './provider-registry';
+import type { ProviderTextItem, ProviderTranscribeResult } from './provider';
+import { detectSpeechRegions } from './speech-regions';
 
+export const TRANSLATION_BATCH_SIZE = 40;
+/** Provider upload limit is 25 MB; keep a margin for multipart overhead. */
+export const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
+
+export type WorkflowProgress = {
+  stage: JobStage;
+  /** 0..1 when known. */
+  progress?: number;
+};
+
+export type WorkflowContext = {
+  signal?: AbortSignal;
+  onProgress?: (event: WorkflowProgress) => void;
+};
+
+type TextStage = Extract<JobStage, 'translating' | 'polishing'>;
+
+/**
+ * Clip transcription and caption translation. Dependencies are injected so
+ * tests can use fakes. ffmpeg runs only through FfmpegService and MediaService.
+ */
 export class SubtitleWorkflowService {
   constructor(
-    private readonly registry: Pick<AiProviderRegistry, 'transcribe' | 'translate' | 'polishSubtitles'>,
-    private readonly mediaService: Pick<MediaService, 'extractAudio'> = new MediaService()
+    private readonly registry: Pick<AiProviderRegistry, 'transcribe' | 'translateTexts' | 'polishTexts'>,
+    private readonly mediaService: Pick<MediaService, 'extractAudio'> = new MediaService(),
+    private readonly ffmpeg: Pick<FfmpegService, 'run'> = new FfmpegService()
   ) {}
 
-  async generateSubtitles(input: GenerateSubtitlesRequest): Promise<GenerateSubtitlesResult> {
-    validatePath(input.inputPath, 'inputPath');
-    validatePath(input.targetLanguage, 'targetLanguage');
+  /**
+   * Extracts the trimmed audio, transcribes it, and lays out captions. Timing
+   * comes from words when available, then segments, then speech detection.
+   * Returned times are source-absolute.
+   */
+  async transcribe(request: TranscribeClipRequest, context: WorkflowContext = {}): Promise<TranscribeClipResult> {
+    validatePath(request.inputPath, 'inputPath');
+    assertValidTrim(request.trim);
+    throwIfCanceled(context.signal);
 
-    if (input.trim) {
-      validateTimeRange(input.trim.startMs, input.trim.endMs, input.trim.knownDurationMs);
-    }
-
+    const clipDurationMs = request.trim.endMs - request.trim.startMs;
     const tempDir = await mkdtemp(join(tmpdir(), 'tajtlisha-ai-audio-'));
-    const audioPath = join(tempDir, 'audio.wav');
 
     try {
-      await this.mediaService.extractAudio({
-        inputPath: input.inputPath,
-        outputPath: audioPath,
-        format: 'wav',
-        startMs: input.trim?.startMs,
-        endMs: input.trim?.endMs
-      });
+      const audioPath = join(tempDir, 'audio.mp3');
+      await this.extractAudio(request, audioPath, clipDurationMs, context);
 
-      const clipDurationMs = input.trim ? input.trim.endMs - input.trim.startMs : input.knownDurationMs ?? 0;
-      const transcription = await this.registry.transcribe(input.providerId, {
+      const { size } = await stat(audioPath);
+      if (size > MAX_AUDIO_BYTES) {
+        throw new AppError('AUDIO_TOO_LARGE', `Extracted audio is ${(size / 1024 / 1024).toFixed(1)} MB; the limit is 24 MB. Shorten the clip.`);
+      }
+
+      throwIfCanceled(context.signal);
+      context.onProgress?.({ stage: 'transcribing' });
+      const transcription = await this.registry.transcribe(request.providerId, {
         audioPath,
-        audioFormat: 'wav',
-        modelId: input.transcriptionModelId,
-        expectedLanguage: input.expectedLanguage,
-        autoDetectLanguage: input.autoDetectLanguage,
+        audioFormat: 'mp3',
+        modelId: request.modelId,
+        language: request.language,
+        signal: context.signal
+      });
+
+      if (!transcription.text.trim()) {
+        throw new AppError('NO_SPEECH');
+      }
+
+      const options: CaptionBuildOptions = {
+        maxCharsPerLine: request.maxCharsPerLine,
+        maxLinesPerCaption: request.maxLinesPerCaption,
         clipDurationMs
-      });
-
-      const timelineOffsetMs = input.trim?.startMs ?? 0;
-      const sourceSegments = offsetSegments(transcription.segments, timelineOffsetMs);
-      const originalTrack: SubtitleTrack = {
-        id: `original-${transcription.detectedLanguage}`,
-        kind: 'original',
-        language: transcription.detectedLanguage,
-        segments: sourceSegments
       };
+      const layout = await this.layoutCaptions(transcription, audioPath, options, clipDurationMs, context);
+      const captions = toSourceCaptions(layout.drafts, request.trim);
 
-      const translatedTrack = await this.registry.translate(input.providerId, {
-        sourceLanguage: transcription.detectedLanguage,
-        targetLanguage: input.targetLanguage,
-        modelId: input.textModelId,
-        segments: sourceSegments,
-        preserveTiming: true
-      });
-
-      const timedTranslation = preserveTrackTiming(translatedTrack, sourceSegments);
-      const polishedTrack = input.polish
-        ? await this.registry.polishSubtitles(input.providerId, {
-            track: timedTranslation,
-            modelId: input.textModelId,
-            mode: input.polishMode,
-            maxCharsPerLine: input.maxCharsPerLine,
-            maxLinesPerCaption: input.maxLinesPerCaption
-          })
-        : timedTranslation;
+      if (captions.length === 0) {
+        throw new AppError('NO_SPEECH');
+      }
 
       return {
-        originalTrack,
-        translatedTrack: preserveTrackTiming(polishedTrack, sourceSegments)
+        language: transcription.language.trim() || 'und',
+        captions,
+        timingSource: layout.timingSource
       };
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
   }
+
+  /**
+   * Translates captions in batches. Ids missing from the response are retried
+   * once. Anything still missing fails with TRANSLATION_INCOMPLETE. Source text
+   * is never used as a fallback. Polish, if requested, runs on the translations.
+   */
+  async translate(request: TranslateCaptionsRequest, context: WorkflowContext = {}): Promise<TranslateCaptionsResult> {
+    throwIfCanceled(context.signal);
+    if (request.captions.length === 0) {
+      return { translations: [] };
+    }
+
+    const translated = await this.runTextStage(request.captions, 'translating', context, (items) =>
+      this.registry.translateTexts(request.providerId, {
+        items,
+        sourceLanguage: request.sourceLanguage,
+        targetLanguage: request.targetLanguage,
+        modelId: request.modelId,
+        maxCharsPerLine: request.maxCharsPerLine,
+        maxLinesPerCaption: request.maxLinesPerCaption,
+        signal: context.signal
+      })
+    );
+
+    if (request.polish === 'none') {
+      return { translations: translated };
+    }
+
+    const mode = request.polish;
+    const polished = await this.runTextStage(translated, 'polishing', context, (items) =>
+      this.registry.polishTexts(request.providerId, {
+        items,
+        language: request.targetLanguage,
+        mode,
+        modelId: request.modelId,
+        maxCharsPerLine: request.maxCharsPerLine,
+        maxLinesPerCaption: request.maxLinesPerCaption,
+        signal: context.signal
+      })
+    );
+
+    return { translations: polished };
+  }
+
+  private async extractAudio(
+    request: TranscribeClipRequest,
+    audioPath: string,
+    clipDurationMs: number,
+    context: WorkflowContext
+  ): Promise<void> {
+    context.onProgress?.({ stage: 'extracting_audio', progress: 0 });
+    try {
+      await this.mediaService.extractAudio(
+        {
+          inputPath: request.inputPath,
+          outputPath: audioPath,
+          format: 'mp3',
+          startMs: request.trim.startMs,
+          endMs: request.trim.endMs
+        },
+        {
+          signal: context.signal,
+          onProgress: (outTimeMs) => {
+            context.onProgress?.({ stage: 'extracting_audio', progress: Math.min(1, outTimeMs / clipDurationMs) });
+          }
+        }
+      );
+    } catch (error) {
+      if (isNoAudioError(error)) {
+        throw new AppError('NO_AUDIO');
+      }
+      throw error;
+    }
+  }
+
+  private async layoutCaptions(
+    transcription: ProviderTranscribeResult,
+    audioPath: string,
+    options: CaptionBuildOptions,
+    clipDurationMs: number,
+    context: WorkflowContext
+  ): Promise<{ drafts: CaptionDraft[]; timingSource: CaptionTimingSource }> {
+    if (transcription.words?.length) {
+      return { drafts: buildCaptionsFromWords(transcription.words, options), timingSource: 'word' };
+    }
+
+    if (transcription.segments?.length) {
+      return { drafts: buildCaptionsFromSegments(transcription.segments, options), timingSource: 'segment' };
+    }
+
+    throwIfCanceled(context.signal);
+    context.onProgress?.({ stage: 'detecting_speech' });
+    const regions = await detectSpeechRegions(audioPath, this.ffmpeg, { signal: context.signal, durationMs: clipDurationMs });
+    if (regions.length === 0) {
+      throw new AppError('NO_SPEECH');
+    }
+
+    return {
+      drafts: buildCaptionsFromSpeechRegions(transcription.text, regions, options),
+      timingSource: 'speech_detection'
+    };
+  }
+
+  private async runTextStage(
+    items: ProviderTextItem[],
+    stage: TextStage,
+    context: WorkflowContext,
+    call: (batch: ProviderTextItem[]) => Promise<ProviderTextItem[]>
+  ): Promise<ProviderTextItem[]> {
+    const resolved = new Map<string, string>();
+    context.onProgress?.({ stage, progress: 0 });
+
+    const runPass = async (pending: ProviderTextItem[]): Promise<void> => {
+      for (const batch of chunkArray(pending, TRANSLATION_BATCH_SIZE)) {
+        throwIfCanceled(context.signal);
+        const batchIds = new Set(batch.map((item) => item.id));
+
+        for (const item of await call(batch)) {
+          const text = item.text.trim();
+          if (batchIds.has(item.id) && text && !resolved.has(item.id)) {
+            resolved.set(item.id, text);
+          }
+        }
+
+        context.onProgress?.({ stage, progress: resolved.size / items.length });
+      }
+    };
+
+    await runPass(items);
+
+    const missingAfterFirstPass = items.filter((item) => !resolved.has(item.id));
+    if (missingAfterFirstPass.length > 0) {
+      await runPass(missingAfterFirstPass);
+    }
+
+    const missing = items.filter((item) => !resolved.has(item.id));
+    if (missing.length > 0) {
+      throw new AppError('TRANSLATION_INCOMPLETE', `No text returned for caption ids: ${missing.map((item) => item.id).join(', ')}`);
+    }
+
+    return items.map((item) => ({ id: item.id, text: resolved.get(item.id) ?? '' }));
+  }
 }
 
-function offsetSegments(segments: SubtitleTrack['segments'], offsetMs: number): SubtitleTrack['segments'] {
-  if (offsetMs === 0) return segments;
-  return segments.map((segment) => ({ ...segment, startMs: segment.startMs + offsetMs, endMs: segment.endMs + offsetMs }));
+function toSourceCaptions(drafts: CaptionDraft[], trim: TrimRange): CaptionRow[] {
+  const clamp = (value: number): number => Math.min(trim.endMs, Math.max(trim.startMs, value));
+
+  return drafts.flatMap((draft) => {
+    const startMs = clamp(draft.startMs + trim.startMs);
+    const endMs = clamp(draft.endMs + trim.startMs);
+    if (endMs <= startMs) return [];
+
+    return [{ id: randomUUID(), startMs, endMs, original: draft.text, translation: '' }];
+  });
 }
 
-function preserveTrackTiming(track: SubtitleTrack, reference: SubtitleTrack['segments']): SubtitleTrack {
-  const byId = new Map(reference.map((segment) => [segment.id, segment]));
-  return {
-    ...track,
-    segments: track.segments.map((segment, index) => {
-      const timing = byId.get(segment.id) ?? reference[index];
-      return timing ? { ...segment, startMs: timing.startMs, endMs: timing.endMs } : segment;
-    })
-  };
+function assertValidTrim(trim: TrimRange): void {
+  if (!Number.isFinite(trim.startMs) || trim.startMs < 0 || !Number.isFinite(trim.endMs) || trim.endMs <= trim.startMs) {
+    throw new AppError('INVALID_TRIM', 'Trim end must be after trim start.');
+  }
+}
+
+function throwIfCanceled(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new AppError('JOB_CANCELED');
+  }
+}
+
+/** ffmpeg fails with "does not contain any stream" or "matches no streams" when the input has no audio. */
+function isNoAudioError(error: unknown): boolean {
+  return (
+    error instanceof AppError &&
+    error.code === 'FFMPEG_FAILED' &&
+    /does not contain any stream|matches no streams/i.test(error.message)
+  );
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }

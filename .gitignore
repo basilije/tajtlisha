@@ -5,3 +5,5 @@ coverage
 test-results
 playwright-report
 .vitest-attachments
+release/
+vendor/ffmpeg/

@@ -78,4 +78,17 @@ describe('SettingsStore', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('treats an empty string as clearing an optional setting', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'tajtlisha-settings-'));
+    try {
+      const store = new SettingsStore({ filePath: join(dir, 'settings.json') });
+      await store.update({ defaultOutputFolder: '/videos/out' });
+      const cleared = await store.update({ defaultOutputFolder: '' });
+      expect(cleared.defaultOutputFolder).toBeUndefined();
+      expect('defaultOutputFolder' in (await store.get())).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

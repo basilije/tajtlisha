@@ -1,8 +1,8 @@
 import { net, protocol } from 'electron';
-import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { MediaTokenMap } from './media-token-map';
 
-const LOCAL_MEDIA_SCHEME = 'tajtlisha-media';
+export const LOCAL_MEDIA_SCHEME = 'tajtlisha-media';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -17,24 +17,28 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 export type LocalMediaProtocol = {
+  /** Must run once, after app ready and before any URL is handed to a renderer. */
   register(): Promise<void>;
   createVideoUrl(inputPath: string): string;
+  revoke(inputPath: string): void;
 };
 
 export function createLocalMediaProtocol(): LocalMediaProtocol {
-  let selectedVideo: { inputPath: string; token: string } | null = null;
+  const tokens = new MediaTokenMap();
 
   return {
     register: async () => {
       protocol.handle(LOCAL_MEDIA_SCHEME, async (request) => {
         const requestUrl = new URL(request.url);
         const token = requestUrl.pathname.slice(1);
+        const inputPath = tokens.pathFor(token);
 
-        if (requestUrl.hostname !== 'video' || !selectedVideo || token !== selectedVideo.token) {
+        if (requestUrl.hostname !== 'video' || inputPath === undefined) {
           return new Response('Media not found.', { status: 404 });
         }
 
-        const response = await net.fetch(pathToFileURL(selectedVideo.inputPath).toString(), {
+        // net.fetch on a file: URL keeps range requests working for seeking.
+        const response = await net.fetch(pathToFileURL(inputPath).toString(), {
           headers: request.headers
         });
         const headers = new Headers(response.headers);
@@ -49,10 +53,7 @@ export function createLocalMediaProtocol(): LocalMediaProtocol {
         });
       });
     },
-    createVideoUrl: (inputPath) => {
-      const token = randomUUID();
-      selectedVideo = { inputPath, token };
-      return `${LOCAL_MEDIA_SCHEME}://video/${token}`;
-    }
+    createVideoUrl: (inputPath) => `${LOCAL_MEDIA_SCHEME}://video/${tokens.tokenFor(inputPath)}`,
+    revoke: (inputPath) => tokens.revoke(inputPath)
   };
 }

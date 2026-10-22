@@ -1,8 +1,20 @@
+export type FfmpegCapabilityFlags = {
+  ffprobe: boolean;
+  assFilter: boolean;
+  libx264: boolean;
+  aac: boolean;
+  mp3: boolean;
+};
+
 export type FfmpegStatus = {
+  /** ffmpeg runs and nothing the app needs is missing. */
   available: boolean;
   path?: string;
   version?: string;
   message?: string;
+  /** Human-readable names of what the app needs and does not have. */
+  missing?: string[];
+  capabilities?: FfmpegCapabilityFlags;
 };
 
 export type MediaProbeRequest = {
@@ -14,6 +26,9 @@ export type MediaProbeResult = {
   durationMs?: number;
   hasAudio?: boolean;
   hasVideo?: boolean;
+  /** Display size of the first video stream, rotation applied. */
+  width?: number;
+  height?: number;
 };
 
 export type SelectVideoResult = {

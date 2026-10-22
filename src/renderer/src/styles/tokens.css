@@ -1,0 +1,91 @@
+/*
+ * Tajtlisha design tokens. Dark, dense desktop-tool look. Every component
+ * uses these variables; do not hardcode colors or spacing in components.
+ */
+
+/* Bundled subtitle font (same files ffmpeg/libass use for export). */
+@font-face {
+  font-family: 'Noto Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: url('../../../../resources/fonts/NotoSans-Regular.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Noto Sans';
+  font-style: normal;
+  font-weight: 700;
+  src: url('../../../../resources/fonts/NotoSans-Bold.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Noto Sans';
+  font-style: italic;
+  font-weight: 400;
+  src: url('../../../../resources/fonts/NotoSans-Italic.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Noto Sans';
+  font-style: italic;
+  font-weight: 700;
+  src: url('../../../../resources/fonts/NotoSans-BoldItalic.ttf') format('truetype');
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --bg: #121517;
+  --surface-1: #181c1f;
+  --surface-2: #1e2327;
+  --surface-3: #262c31;
+  --surface-hover: #2b3238;
+  --border: #2c3338;
+  --border-strong: #3b444b;
+
+  /* Text */
+  --text: #e8e9e4;
+  --text-muted: #9aa29e;
+  --text-faint: #6c7571;
+
+  /* Accent (warm amber) and states */
+  --accent: #d9a648;
+  --accent-hover: #e6b65c;
+  --accent-text: #1a1406;
+  --accent-soft: rgba(217, 166, 72, 0.14);
+  --success: #7fbf8e;
+  --success-soft: rgba(127, 191, 142, 0.14);
+  --warning: #e6c15c;
+  --warning-soft: rgba(230, 193, 92, 0.14);
+  --danger: #e57a68;
+  --danger-soft: rgba(229, 122, 104, 0.14);
+  --info: #7fb2e5;
+
+  /* Track colors (timeline blocks, badges) */
+  --track-original: #5f9e7a;
+  --track-translation: #d9a648;
+
+  /* Type */
+  --font-ui: 'Noto Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'DejaVu Sans Mono', 'Cascadia Mono', monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 18px;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  /* Shape */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+
+  /* Layout */
+  --topbar-height: 48px;
+  --control-height: 30px;
+}

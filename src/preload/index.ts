@@ -1,38 +1,82 @@
-import { contextBridge, ipcRenderer } from 'electron';
-import type { TajtlishaApi } from '../shared/types/ipc';
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import { IPC_CHANNELS as C, type QuitReadyResult, type TajtlishaApi } from '../shared/types/ipc';
+import type { JobProgressEvent } from '../shared/types/jobs';
+import type { UpdateState } from '../shared/types/updates';
+
+function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
+  const handler = (_event: IpcRendererEvent, payload: T): void => listener(payload);
+  ipcRenderer.on(channel, handler);
+  return () => {
+    ipcRenderer.removeListener(channel, handler);
+  };
+}
 
 const api: TajtlishaApi = {
   settings: {
-    get: () => ipcRenderer.invoke('settings:get'),
-    update: (patch) => ipcRenderer.invoke('settings:update', patch),
-    reset: () => ipcRenderer.invoke('settings:reset')
+    get: () => ipcRenderer.invoke(C.settingsGet),
+    update: (patch) => ipcRenderer.invoke(C.settingsUpdate, patch),
+    reset: () => ipcRenderer.invoke(C.settingsReset)
   },
   ai: {
-    listProviders: () => ipcRenderer.invoke('ai:listProviders'),
-    getProviderStatus: (providerId) => ipcRenderer.invoke('ai:getProviderStatus', providerId),
-    connectProvider: (input) => ipcRenderer.invoke('ai:connectProvider', input),
-    disconnectProvider: (providerId) => ipcRenderer.invoke('ai:disconnectProvider', providerId),
-    testConnection: (providerId) => ipcRenderer.invoke('ai:testConnection', providerId),
-    listModels: (providerId, capability) => ipcRenderer.invoke('ai:listModels', providerId, capability),
-    transcribe: (providerId, request) => ipcRenderer.invoke('ai:transcribe', providerId, request),
-    translate: (providerId, request) => ipcRenderer.invoke('ai:translate', providerId, request),
-    polishSubtitles: (providerId, request) => ipcRenderer.invoke('ai:polishSubtitles', providerId, request),
-    generateSubtitles: (request) => ipcRenderer.invoke('ai:generateSubtitles', request)
+    listProviders: () => ipcRenderer.invoke(C.aiListProviders),
+    getProviderStatus: (providerId) => ipcRenderer.invoke(C.aiGetProviderStatus, providerId),
+    connectProvider: (input) => ipcRenderer.invoke(C.aiConnectProvider, input),
+    disconnectProvider: (providerId) => ipcRenderer.invoke(C.aiDisconnectProvider, providerId),
+    testConnection: (providerId) => ipcRenderer.invoke(C.aiTestConnection, providerId),
+    listModels: (providerId, capability) => ipcRenderer.invoke(C.aiListModels, providerId, capability)
   },
-  media: {
-    selectVideo: () => ipcRenderer.invoke('media:selectVideo'),
-    createPreviewProxy: (input) => ipcRenderer.invoke('media:createPreviewProxy', input),
-    getFfmpegStatus: () => ipcRenderer.invoke('media:getFfmpegStatus'),
-    probe: (input) => ipcRenderer.invoke('media:probe', input),
-    trim: (input) => ipcRenderer.invoke('media:trim', input),
-    extractAudio: (input) => ipcRenderer.invoke('media:extractAudio', input)
+  project: {
+    selectVideo: () => ipcRenderer.invoke(C.projectSelectVideo),
+    loadLast: () => ipcRenderer.invoke(C.projectLoadLast),
+    save: (project) => ipcRenderer.invoke(C.projectSave, project),
+    createPreviewProxy: (request) => ipcRenderer.invoke(C.projectCreatePreviewProxy, request),
+    renderPreviewFrame: (request) => ipcRenderer.invoke(C.projectRenderPreviewFrame, request)
+  },
+  workflow: {
+    transcribe: (request) => ipcRenderer.invoke(C.workflowTranscribe, request),
+    translate: (request) => ipcRenderer.invoke(C.workflowTranslate, request)
+  },
+  jobs: {
+    cancel: (jobId) => ipcRenderer.invoke(C.jobsCancel, jobId),
+    onProgress: (listener) => subscribe<JobProgressEvent>(C.jobsProgress, listener)
   },
   export: {
-    selectOutputFolder: () => ipcRenderer.invoke('export:selectOutputFolder'),
-    writeSrt: (input) => ipcRenderer.invoke('export:writeSrt', input),
-    burnSubtitles: (input) => ipcRenderer.invoke('export:burnSubtitles', input),
-    exportProject: (input) => ipcRenderer.invoke('export:project', input)
+    selectOutputFolder: () => ipcRenderer.invoke(C.exportSelectOutputFolder),
+    exportProject: (request) => ipcRenderer.invoke(C.exportProject, request),
+    showInFolder: (path) => ipcRenderer.invoke(C.exportShowInFolder, path)
+  },
+  media: {
+    getFfmpegStatus: () => ipcRenderer.invoke(C.mediaGetFfmpegStatus)
+  },
+  updates: {
+    getState: () => ipcRenderer.invoke(C.updatesGetState),
+    check: () => ipcRenderer.invoke(C.updatesCheck),
+    download: () => ipcRenderer.invoke(C.updatesDownload),
+    install: () => ipcRenderer.invoke(C.updatesInstall),
+    onState: (listener) => subscribe<UpdateState>(C.updatesState, listener)
+  },
+  app: {
+    getInfo: () => ipcRenderer.invoke(C.appGetInfo),
+    onPrepareQuit: (listener) => {
+      quitListeners.add(listener);
+      return () => {
+        quitListeners.delete(listener);
+      };
+    }
   }
 };
+
+// Quit handshake: run every listener, then tell main whether everything was
+// saved. A rejected listener means unsaved data; main asks the user what to do.
+const quitListeners = new Set<() => Promise<void> | void>();
+ipcRenderer.on(C.appPrepareQuit, (_event, requestId: string) => {
+  void Promise.allSettled([...quitListeners].map((listener) => Promise.resolve().then(listener))).then((results) => {
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    const result: QuitReadyResult = failure
+      ? { saved: false, detail: failure.reason instanceof Error ? failure.reason.message : String(failure.reason) }
+      : { saved: true };
+    return ipcRenderer.invoke(C.appQuitReady, requestId, result);
+  });
+});
 
 contextBridge.exposeInMainWorld('tajtlisha', api);

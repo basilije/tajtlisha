@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, master]
+  pull_request:
+    branches: [develop, master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The real-ffmpeg tests look for `ffmpeg` on PATH, so the vendored build goes there too.
+      - name: Fetch the bundled Windows ffmpeg
+        run: node scripts/fetch-ffmpeg.mjs --platform win32
+
+      - name: Point the app and tests at the vendored ffmpeg
+        shell: bash
+        run: |
+          echo "$GITHUB_WORKSPACE/vendor/ffmpeg/win32-x64/bin" >> "$GITHUB_PATH"
+          echo "TAJTLISHA_FFMPEG_PATH=$GITHUB_WORKSPACE/vendor/ffmpeg/win32-x64/bin/ffmpeg.exe" >> "$GITHUB_ENV"
+          echo "TAJTLISHA_FFPROBE_PATH=$GITHUB_WORKSPACE/vendor/ffmpeg/win32-x64/bin/ffprobe.exe" >> "$GITHUB_ENV"
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Main tests (local)
+        run: pnpm test:main:local

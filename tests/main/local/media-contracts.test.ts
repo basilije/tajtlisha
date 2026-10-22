@@ -47,6 +47,8 @@ describe('media contracts', () => {
       '0:v:0',
       '-map',
       '0:a:0?',
+      '-vf',
+      'scale=trunc(iw/2)*2:trunc(ih/2)*2',
       '-c:v',
       'libx264',
       '-preset',
@@ -62,7 +64,7 @@ describe('media contracts', () => {
       '-movflags',
       '+faststart',
       '/tmp/preview.mp4'
-    ]);
+    ], {});
   });
 
   it('trims with output-side seeking and re-encoding for precise boundaries', async () => {
@@ -98,6 +100,6 @@ describe('media contracts', () => {
       '-avoid_negative_ts',
       'make_zero',
       '/tmp/trimmed.mp4'
-    ]);
+    ], {});
   });
 });

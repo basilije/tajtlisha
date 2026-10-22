@@ -1,9 +1,30 @@
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import type { TranscriptionResult, TranslationRequest, SubtitlePolishRequest } from '../../shared/types/ai';
-import type { SubtitleTrack, TranscriptSegment } from '../../shared/types/subtitles';
+import type { ProviderModelDescriptor } from '../../shared/types/ai';
+import { AppError } from '../../shared/errors';
 import { validatePath } from '../media/contracts';
-import { PlaceholderAiProvider, type AiProviderContext, type ProviderDefinition } from './provider';
+import { transcriptionLanguageCode, languageCodeFromSpokenName } from './language';
+import {
+  BaseAiProvider,
+  type AiProviderContext,
+  type ProviderDefinition,
+  type ProviderPolishRequest,
+  type ProviderTextItem,
+  type ProviderTranscribeRequest,
+  type ProviderTranscribeResult,
+  type ProviderTranslateRequest,
+  type ProviderTimedText
+} from './provider';
+import {
+  buildCaptionItemsInput,
+  buildPolishInstructions,
+  buildTranslationInstructions,
+  CAPTION_ITEMS_SCHEMA,
+  parseCaptionItems
+} from './text-prompts';
+
+export const OPENAI_DEFAULT_TRANSCRIPTION_MODEL = 'whisper-1';
+export const OPENAI_DEFAULT_TEXT_MODEL = 'gpt-4.1-mini';
 
 export const openAiProviderDefinition: ProviderDefinition = {
   id: 'openai',
@@ -19,23 +40,24 @@ export const openAiProviderDefinition: ProviderDefinition = {
     textToSpeech: false
   },
   modelDescriptors: [
-    { id: 'gpt-4o-transcribe', label: 'GPT-4o Transcribe', capability: 'transcription' },
-    { id: 'gpt-4o-mini-transcribe', label: 'GPT-4o mini Transcribe', capability: 'transcription' },
+    { id: 'whisper-1', label: 'Whisper (whisper-1)', capability: 'transcription', timestamps: 'word' },
+    { id: 'gpt-transcribe', label: 'GPT Transcribe', capability: 'transcription', timestamps: 'none' },
+    { id: 'gpt-4o-transcribe', label: 'GPT-4o Transcribe', capability: 'transcription', timestamps: 'none' },
+    { id: 'gpt-4o-mini-transcribe', label: 'GPT-4o mini Transcribe', capability: 'transcription', timestamps: 'none' },
     { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini', capability: 'translation' },
-    { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini', capability: 'subtitlePolish' }
+    { id: 'gpt-4.1', label: 'GPT-4.1', capability: 'translation' },
+    { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini', capability: 'subtitlePolish' },
+    { id: 'gpt-4.1', label: 'GPT-4.1', capability: 'subtitlePolish' }
   ]
 };
+
+const OPENAI_API = 'https://api.openai.com/v1';
 
 type OpenAiVerboseTranscription = {
   language?: string;
   text?: string;
-  segments?: Array<{
-    id?: string | number;
-    start?: number;
-    end?: number;
-    text?: string;
-    avg_logprob?: number;
-  }>;
+  words?: Array<{ word?: string; start?: number; end?: number }>;
+  segments?: Array<{ start?: number; end?: number; text?: string }>;
 };
 
 type OpenAiTextResponse = {
@@ -48,229 +70,155 @@ type OpenAiTextResponse = {
   }>;
 };
 
-type TextSegmentPayload = {
-  segments: Array<{
-    id: string;
-    text: string;
-  }>;
-};
+export class OpenAiProvider extends BaseAiProvider {
+  protected readonly modelsUrl = `${OPENAI_API}/models`;
 
-export class OpenAiProvider extends PlaceholderAiProvider {
   constructor(context: AiProviderContext) {
     super(openAiProviderDefinition, context);
   }
 
-  override async transcribe(request: Parameters<PlaceholderAiProvider['transcribe']>[0]): Promise<TranscriptionResult> {
+  override async transcribe(request: ProviderTranscribeRequest): Promise<ProviderTranscribeResult> {
     validatePath(request.audioPath, 'audioPath');
-    await this.requireCredentialSecret();
-
-    const form = new FormData();
-    form.set('model', request.modelId ?? 'gpt-4o-mini-transcribe');
-    form.set('response_format', 'verbose_json');
-    form.append('timestamp_granularities[]', 'segment');
-
-    if (!request.autoDetectLanguage && request.expectedLanguage) {
-      form.set('language', request.expectedLanguage);
-    }
+    await this.requireSecret();
+    const modelId = request.modelId ?? OPENAI_DEFAULT_TRANSCRIPTION_MODEL;
 
     const audio = new Blob([await readFile(request.audioPath)], { type: mimeTypeForAudioFormat(request.audioFormat) });
-    form.set('file', audio, basename(request.audioPath));
+    const form = buildOpenAiTranscriptionForm({
+      modelId,
+      language: request.language,
+      audio,
+      fileName: basename(request.audioPath)
+    });
 
-    const payload = await this.requestJson<OpenAiVerboseTranscription>('https://api.openai.com/v1/audio/transcriptions', {
+    const payload = await this.fetchJson(`${OPENAI_API}/audio/transcriptions`, {
       method: 'POST',
-      body: form
-    });
-    const detectedLanguage = payload.language ?? request.expectedLanguage ?? 'und';
-    const text = payload.text?.trim() ?? '';
-    const segments = normalizeTranscriptionSegments(payload, request.clipDurationMs, detectedLanguage);
-
-    return {
-      detectedLanguage,
-      text,
-      segments,
-      providerMetadata: {
-        provider: this.id,
-        model: request.modelId ?? 'gpt-4o-mini-transcribe'
-      }
-    };
-  }
-
-  override async testConnection() {
-    const checkedAt = new Date().toISOString();
-
-    try {
-      await this.request('https://api.openai.com/v1/models', { method: 'GET' });
-      return {
-        ok: true,
-        providerId: this.id,
-        checkedAt,
-        message: 'OpenAI connection verified.'
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        providerId: this.id,
-        checkedAt,
-        message: error instanceof Error ? error.message : 'OpenAI connection could not be verified.'
-      };
-    }
-  }
-
-  override async translate(request: TranslationRequest): Promise<SubtitleTrack> {
-    const payload = await this.requestStructuredSegments({
-      model: request.modelId ?? 'gpt-4.1-mini',
-      instruction: [
-        'Translate subtitle segments.',
-        'Preserve the original meaning, speaker intent, and concise subtitle style.',
-        'Return exactly one translated text item for each input id.',
-        'Do not change timing, ids, or segment order.'
-      ].join(' '),
-      input: {
-        sourceLanguage: request.sourceLanguage,
-        targetLanguage: request.targetLanguage,
-        segments: request.segments.map(({ id, text }) => ({ id, text }))
-      }
+      body: form,
+      signal: request.signal
     });
 
-    return {
-      id: `translation-${request.targetLanguage}`,
-      kind: 'translation',
-      language: request.targetLanguage,
-      sourceLanguage: request.sourceLanguage,
-      targetLanguage: request.targetLanguage,
-      segments: mergeTextOntoSegments(request.segments, payload, request.targetLanguage)
-    };
+    return parseOpenAiTranscription(payload, { modelId, requestedLanguage: request.language });
   }
 
-  override async polishSubtitles(request: SubtitlePolishRequest): Promise<SubtitleTrack> {
-    const payload = await this.requestStructuredSegments({
-      model: request.modelId ?? 'gpt-4.1-mini',
-      instruction: [
-        'Polish subtitle text without changing meaning.',
-        `Mode: ${request.mode}.`,
-        `Keep each caption to at most ${request.maxLinesPerCaption} line(s) and about ${request.maxCharsPerLine} characters per line.`,
-        'Return exactly one polished text item for each input id.',
-        'Do not change timing, ids, language, or segment order.'
-      ].join(' '),
-      input: {
-        language: request.track.language,
-        segments: request.track.segments.map(({ id, text }) => ({ id, text }))
-      }
+  override async translateTexts(request: ProviderTranslateRequest): Promise<ProviderTextItem[]> {
+    const text = await this.requestCaptionText({
+      model: request.modelId ?? OPENAI_DEFAULT_TEXT_MODEL,
+      instructions: buildTranslationInstructions(request),
+      items: request.items,
+      signal: request.signal
     });
-
-    return {
-      ...request.track,
-      segments: mergeTextOntoSegments(request.track.segments, payload, request.track.language)
-    };
+    return parseCaptionItems(text, this.displayName);
   }
 
-  private async requestStructuredSegments(input: { model: string; instruction: string; input: unknown }): Promise<TextSegmentPayload> {
-    const response = await this.requestJson<OpenAiTextResponse>('https://api.openai.com/v1/responses', {
+  override async polishTexts(request: ProviderPolishRequest): Promise<ProviderTextItem[]> {
+    const text = await this.requestCaptionText({
+      model: request.modelId ?? OPENAI_DEFAULT_TEXT_MODEL,
+      instructions: buildPolishInstructions(request),
+      items: request.items,
+      signal: request.signal
+    });
+    return parseCaptionItems(text, this.displayName);
+  }
+
+  private async requestCaptionText(input: {
+    model: string;
+    instructions: string;
+    items: ProviderTextItem[];
+    signal?: AbortSignal;
+  }): Promise<string> {
+    const response = (await this.fetchJson(`${OPENAI_API}/responses`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         model: input.model,
         store: false,
         input: [
-          {
-            role: 'system',
-            content: input.instruction
-          },
-          {
-            role: 'user',
-            content: JSON.stringify(input.input)
-          }
+          { role: 'system', content: input.instructions },
+          { role: 'user', content: buildCaptionItemsInput(input.items) }
         ],
         text: {
           format: {
             type: 'json_schema',
-            name: 'subtitle_segments',
+            name: 'caption_items',
             strict: true,
-            schema: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['segments'],
-              properties: {
-                segments: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    additionalProperties: false,
-                    required: ['id', 'text'],
-                    properties: {
-                      id: { type: 'string' },
-                      text: { type: 'string' }
-                    }
-                  }
-                }
-              }
-            }
+            schema: CAPTION_ITEMS_SCHEMA
           }
         }
-      })
-    });
+      }),
+      signal: input.signal
+    })) as OpenAiTextResponse;
 
-    return parseTextSegmentPayload(extractOutputText(response));
-  }
-
-  private async requestJson<T>(url: string, init: RequestInit): Promise<T> {
-    const response = await this.request(url, init);
-
-    try {
-      return (await response.json()) as T;
-    } catch {
-      throw new Error('OpenAI returned an unreadable response. Please try again.');
-    }
-  }
-
-  private async request(url: string, init: RequestInit): Promise<Response> {
-    const secret = await this.requireCredentialSecret();
-    const headers = new Headers(init.headers);
-    headers.set('authorization', `Bearer ${secret}`);
-
-    try {
-      const response = await fetch(url, { ...init, headers });
-      if (!response.ok) {
-        throw new Error(openAiHttpErrorMessage(response.status));
-      }
-
-      return response;
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith('OpenAI ')) {
-        throw error;
-      }
-
-      throw new Error('Unable to reach OpenAI. Check your internet connection and try again.');
-    }
-  }
-
-  private async requireCredentialSecret(): Promise<string> {
-    const credential = await this.credentialStore.get(this.id);
-    if (!credential?.secret) {
-      throw new Error('OpenAI API key is required before calling this provider.');
-    }
-
-    return credential.secret;
+    return extractOutputText(response);
   }
 }
 
-function openAiHttpErrorMessage(status: number): string {
-  if (status === 401 || status === 403) {
-    return 'OpenAI rejected the API key.';
+/**
+ * Builds the multipart body for /v1/audio/transcriptions. Only models with
+ * word timestamps (whisper-1) get verbose_json plus timestamp granularities;
+ * every other model gets plain json with text only.
+ */
+export function buildOpenAiTranscriptionForm(input: {
+  modelId: string;
+  language?: string;
+  audio: Blob;
+  fileName: string;
+}): FormData {
+  const form = new FormData();
+  form.set('model', input.modelId);
+
+  const language = transcriptionLanguageCode(input.language);
+  if (language) {
+    form.set('language', language);
   }
 
-  if (status === 429) {
-    return 'OpenAI rate limit or quota blocked this request. Check Platform billing, project budget, and rate limits.';
+  if (openAiTimestamps(input.modelId) === 'word') {
+    form.set('response_format', 'verbose_json');
+    form.append('timestamp_granularities[]', 'word');
+    form.append('timestamp_granularities[]', 'segment');
+  } else {
+    form.set('response_format', 'json');
   }
 
-  if (status >= 500) {
-    return 'OpenAI is temporarily unavailable. Please try again later.';
-  }
-
-  return `OpenAI request failed (HTTP ${status}).`;
+  form.set('file', input.audio, input.fileName);
+  return form;
 }
 
-function mimeTypeForAudioFormat(format: 'wav' | 'mp3' | 'm4a'): string {
+/** Normalizes a verbose_json or json transcription payload into a provider result. */
+export function parseOpenAiTranscription(
+  payload: unknown,
+  options: { modelId: string; requestedLanguage?: string }
+): ProviderTranscribeResult {
+  const body = (payload ?? {}) as OpenAiVerboseTranscription;
+  const language = options.requestedLanguage ?? languageCodeFromSpokenName(body.language) ?? 'und';
+  const words = toTimedText(body.words?.map((word) => ({ text: word.word, start: word.start, end: word.end })));
+  const segments = toTimedText(body.segments);
+
+  return {
+    language,
+    text: body.text?.trim() ?? '',
+    ...(words.length ? { words } : {}),
+    ...(segments.length ? { segments } : {})
+  };
+}
+
+function openAiTimestamps(modelId: string): ProviderModelDescriptor['timestamps'] {
+  return openAiProviderDefinition.modelDescriptors.find(
+    (model) => model.capability === 'transcription' && model.id === modelId
+  )?.timestamps;
+}
+
+function toTimedText(items: Array<{ text?: string; start?: number; end?: number }> | undefined): ProviderTimedText[] {
+  if (!items) return [];
+
+  return items.flatMap((item) => {
+    const text = item.text?.trim();
+    if (!text || typeof item.start !== 'number' || typeof item.end !== 'number') return [];
+
+    const startMs = Math.max(0, Math.round(item.start * 1000));
+    return [{ text, startMs, endMs: Math.max(startMs, Math.round(item.end * 1000)) }];
+  });
+}
+
+function mimeTypeForAudioFormat(format: ProviderTranscribeRequest['audioFormat']): string {
   switch (format) {
     case 'wav':
       return 'audio/wav';
@@ -279,38 +227,6 @@ function mimeTypeForAudioFormat(format: 'wav' | 'mp3' | 'm4a'): string {
     case 'm4a':
       return 'audio/mp4';
   }
-}
-
-function normalizeTranscriptionSegments(
-  payload: OpenAiVerboseTranscription,
-  clipDurationMs: number,
-  language: string
-): TranscriptSegment[] {
-  const segments = payload.segments
-    ?.filter((segment) => typeof segment.text === 'string' && typeof segment.start === 'number' && typeof segment.end === 'number')
-    .map((segment, index) => ({
-      id: String(segment.id ?? `seg-${index + 1}`),
-      startMs: Math.max(0, Math.round((segment.start ?? 0) * 1000)),
-      endMs: Math.max(1, Math.round((segment.end ?? 0) * 1000)),
-      text: segment.text?.trim() ?? '',
-      language,
-      confidence: typeof segment.avg_logprob === 'number' ? Math.max(0, Math.min(1, Math.exp(segment.avg_logprob))) : undefined
-    }));
-
-  if (segments?.length) {
-    return segments;
-  }
-
-  return [
-    {
-      id: 'seg-1',
-      startMs: 0,
-      endMs: Math.max(1, clipDurationMs),
-      text: payload.text?.trim() ?? '',
-      language,
-      confidence: 0.5
-    }
-  ];
 }
 
 function extractOutputText(response: OpenAiTextResponse): string {
@@ -323,26 +239,8 @@ function extractOutputText(response: OpenAiTextResponse): string {
     .find((content) => content.type === 'output_text' && typeof content.text === 'string')?.text;
 
   if (!text) {
-    throw new Error('OpenAI response did not contain output text.');
+    throw new AppError('PROVIDER_REQUEST_FAILED', 'OpenAI response did not contain output text.');
   }
 
   return text;
-}
-
-function parseTextSegmentPayload(text: string): TextSegmentPayload {
-  const payload = JSON.parse(text) as TextSegmentPayload;
-  if (!Array.isArray(payload.segments)) {
-    throw new Error('OpenAI response did not contain subtitle segments.');
-  }
-
-  return payload;
-}
-
-function mergeTextOntoSegments(source: TranscriptSegment[], payload: TextSegmentPayload, language: string): TranscriptSegment[] {
-  const byId = new Map(payload.segments.map((segment) => [segment.id, segment.text]));
-  return source.map((segment) => ({
-    ...segment,
-    text: byId.get(segment.id)?.trim() || segment.text,
-    language
-  }));
 }

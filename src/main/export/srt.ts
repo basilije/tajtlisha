@@ -1,26 +1,30 @@
-import { writeFile } from 'node:fs/promises';
-import type { WriteSrtRequest, WriteSrtResult } from '../../shared/types/export';
 import type { SubtitleTrack } from '../../shared/types/subtitles';
+import { type CaptionTextField, type ExportCaption, type ExportCue, captionCuesFor } from './captions';
 import { assertValidSubtitleTiming } from './timing';
 
-export function serializeSrt(track: SubtitleTrack): string {
-  assertValidSubtitleTiming(track);
+/** Serializes cues as SRT. Timing is validated first; '\n' inside a cue stays a line break. */
+export function serializeSrtCues(cues: readonly ExportCue[]): string {
+  assertValidSubtitleTiming(cues);
+  if (cues.length === 0) {
+    return '';
+  }
 
-  return `${track.segments
-    .map((segment, index) => {
-      const text = normalizeSubtitleText(segment.text);
-      return [`${index + 1}`, `${formatSrtTimestamp(segment.startMs)} --> ${formatSrtTimestamp(segment.endMs)}`, text].join('\n');
-    })
+  return `${cues
+    .map((cue, index) =>
+      [`${index + 1}`, `${formatSrtTimestamp(cue.startMs)} --> ${formatSrtTimestamp(cue.endMs)}`, normalizeCueText(cue.text)].join('\n')
+    )
     .join('\n\n')}\n`;
 }
 
-export async function writeSrt(input: WriteSrtRequest): Promise<WriteSrtResult> {
-  const srt = serializeSrt(input.track);
-  await writeFile(input.outputPath, srt, { encoding: 'utf8', flag: input.overwriteExisting ? 'w' : 'wx' });
-  return {
-    outputPath: input.outputPath,
-    segmentCount: input.track.segments.length
-  };
+export function serializeSrt(track: SubtitleTrack): string {
+  return serializeSrtCues(
+    track.segments.map((segment) => ({ id: segment.id, startMs: segment.startMs, endMs: segment.endMs, text: segment.text }))
+  );
+}
+
+/** SRT for one text field of already shifted export captions. Blank captions are skipped. */
+export function buildSrtFromCaptions(captions: readonly ExportCaption[], field: CaptionTextField): string {
+  return serializeSrtCues(captionCuesFor(captions, field));
 }
 
 export function formatSrtTimestamp(ms: number): string {
@@ -33,8 +37,13 @@ export function formatSrtTimestamp(ms: number): string {
   return `${pad(hours, 2)}:${pad(minutes, 2)}:${pad(seconds, 2)},${pad(milliseconds, 3)}`;
 }
 
-function normalizeSubtitleText(text: string): string {
-  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+/** Blank lines would end the cue early, so they are dropped; each line is trimmed. */
+function normalizeCueText(text: string): string {
+  return text
+    .split(/\r\n|\r|\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
 }
 
 function pad(value: number, size: number): string {

@@ -1,9 +1,18 @@
 {
   "name": "tajtlisha",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Linux-first desktop subtitle tool for short MP4 clips.",
+  "private": true,
+  "author": "Bojan",
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/blonestar/tajtlisha",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blonestar/tajtlisha.git"
+  },
   "main": "out/main/index.js",
   "type": "module",
+  "packageManager": "pnpm@11.10.0",
   "scripts": {
     "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "pnpm typecheck && electron-vite build",
@@ -14,7 +23,12 @@
     "test:main:ai": "vitest run --config tests/main/ai/vitest.config.ts",
     "test:renderer": "vitest run --config tests/renderer/vitest.config.ts",
     "test:e2e": "env -u ELECTRON_RUN_AS_NODE playwright test",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs --platform all",
+    "dist": "node scripts/fetch-ffmpeg.mjs --platform all && pnpm build && electron-builder --linux --win nsis --x64 --publish never",
+    "dist:linux": "node scripts/fetch-ffmpeg.mjs --platform linux && pnpm build && electron-builder --linux --publish never",
+    "dist:win": "node scripts/fetch-ffmpeg.mjs --platform win32 && pnpm build && electron-builder --win nsis --x64 --publish never",
+    "dist:dir": "node scripts/fetch-ffmpeg.mjs --platform linux && pnpm build && electron-builder --linux dir --publish never"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -23,6 +37,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "electron-store": "^10.1.0",
+    "electron-updater": "^6.8.9",
     "i18next": "^25.6.3",
     "lucide-react": "^0.468.0",
     "react": "^19.2.1",
@@ -39,6 +54,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.2",
     "electron": "^31.7.7",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^4.0.0",
     "jsdom": "^29.1.1",
     "typescript": "^5.9.3",

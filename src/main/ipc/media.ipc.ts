@@ -1,55 +1,35 @@
-import { app, dialog, ipcMain, type IpcMain } from 'electron';
-import { rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import type { AudioExtractRequest, CreatePreviewProxyRequest, MediaProbeRequest, TrimRequest } from '../../shared/types/media';
-import { MediaService } from '../media';
+import { IPC_CHANNELS } from '../../shared/types/ipc';
+import type { FfmpegStatus } from '../../shared/types/media';
+import { checkFfmpegCapabilities, type FfmpegService } from '../ffmpeg';
+import type { IpcRegistrar } from './types';
 
-type MediaIpcOptions = {
-  ipc?: IpcMain;
-  mediaService?: MediaService;
-  createVideoUrl?: (inputPath: string) => string;
+export type MediaIpcDeps = {
+  ipc: IpcRegistrar;
+  ffmpeg: Pick<FfmpegService, 'getStatus' | 'ffmpegPath' | 'ffprobePath'>;
 };
 
-export function registerMediaIpc({
-  ipc = ipcMain as IpcMain,
-  mediaService = new MediaService(),
-  createVideoUrl = (inputPath) => pathToFileURL(inputPath).toString()
-}: MediaIpcOptions = {}): void {
-  const previewProxyPath = join(tmpdir(), `tajtlisha-preview-${process.pid}.mp4`);
+export function registerMediaIpc({ ipc, ffmpeg }: MediaIpcDeps): void {
+  ipc.handle(IPC_CHANNELS.mediaGetFfmpegStatus, () => getFfmpegStatus(ffmpeg));
+}
 
-  ipc.handle('media:selectVideo', async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ['openFile'],
-      filters: [{ name: 'MP4 video', extensions: ['mp4', 'm4v', 'mov'] }]
-    });
+/** Available only when ffmpeg runs and every capability the export needs is present. */
+export async function getFfmpegStatus(ffmpeg: MediaIpcDeps['ffmpeg']): Promise<FfmpegStatus> {
+  const [status, capabilities] = await Promise.all([ffmpeg.getStatus(), checkFfmpegCapabilities(ffmpeg)]);
+  const { missing, ...flags } = capabilities;
+  const available = flags.ffmpeg && missing.length === 0;
 
-    const inputPath = result.filePaths[0];
-    if (result.canceled || !inputPath) {
-      return null;
+  return {
+    available,
+    path: status.path,
+    version: status.version,
+    message: available ? undefined : missing.length > 0 ? `Missing: ${missing.join(', ')}.` : status.message,
+    missing,
+    capabilities: {
+      ffprobe: flags.ffprobe,
+      assFilter: flags.assFilter,
+      libx264: flags.libx264,
+      aac: flags.aac,
+      mp3: flags.mp3
     }
-
-    const probe = await mediaService.probe({ inputPath });
-    if (!probe.hasVideo) {
-      throw new Error('The selected file does not contain a video stream.');
-    }
-
-    return {
-      ...probe,
-      fileUrl: createVideoUrl(inputPath)
-    };
-  });
-  ipc.handle('media:createPreviewProxy', async (_event, input: CreatePreviewProxyRequest) => {
-    await mediaService.createPreviewProxy(input.inputPath, previewProxyPath);
-    return { fileUrl: createVideoUrl(previewProxyPath) };
-  });
-  ipc.handle('media:getFfmpegStatus', () => mediaService.getFfmpegStatus());
-  ipc.handle('media:probe', (_event, input: MediaProbeRequest) => mediaService.probe(input));
-  ipc.handle('media:trim', (_event, input: TrimRequest) => mediaService.trim(input));
-  ipc.handle('media:extractAudio', (_event, input: AudioExtractRequest) => mediaService.extractAudio(input));
-
-  app.once('will-quit', () => {
-    void rm(previewProxyPath, { force: true });
-  });
+  };
 }

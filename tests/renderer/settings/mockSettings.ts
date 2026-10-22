@@ -1,6 +1,6 @@
-import type { ProviderStatus } from '../../../shared/types/ai';
-import type { AppSettings } from '../../../shared/types/settings';
-import type { SubtitleTrack } from '../../../shared/types/subtitles';
+import type { ProviderStatus } from '../../../src/shared/types/ai';
+import type { AppSettings } from '../../../src/shared/types/settings';
+import type { SubtitleTrack } from '../../../src/shared/types/subtitles';
 
 export const mockSettings: AppSettings = {
   uiLanguage: 'en',

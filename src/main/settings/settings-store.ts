@@ -94,6 +94,16 @@ export function mergeSettings<T extends JsonObject>(base: T, patch: JsonObject):
 }
 
 function normalizeSettings(settings: AppSettings): AppSettings {
+  // Patches cannot carry `undefined` through IPC/JSON merge, so the UI clears an
+  // optional text setting by sending ''. Store that as "not set".
+  const cleared: AppSettings = { ...settings };
+  if (cleared.defaultOutputFolder === '') delete cleared.defaultOutputFolder;
+  if (cleared.workingFolder === '') delete cleared.workingFolder;
+  if (cleared.aiConnector.defaultTargetLanguage === '') {
+    cleared.aiConnector = { ...cleared.aiConnector };
+    delete cleared.aiConnector.defaultTargetLanguage;
+  }
+  settings = cleared;
   return {
     ...settings,
     neverModifyOriginalVideo: true,

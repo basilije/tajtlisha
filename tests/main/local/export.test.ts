@@ -1,34 +1,593 @@
 /* @vitest-environment node */
 import { describe, expect, it } from 'vitest';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { buildCopyFilename, buildExportFilename, formatSrtTimestamp, serializeSrt, validateSubtitleTiming } from '../../../src/main/export';
-import { SubtitleBurnService } from '../../../src/main/export/burn-subtitles';
-import { ExportOutputConflictError, ProjectExportService } from '../../../src/main/export/project-export-service';
+import { basename, dirname, join } from 'node:path';
+import { AppError } from '../../../src/shared/errors';
+import { DEFAULT_SUBTITLE_STYLE } from '../../../src/shared/subtitle-geometry';
+import type { ProjectExportRequest } from '../../../src/shared/types/jobs';
+import type { CaptionRow } from '../../../src/shared/types/project';
+import type { FfmpegRunOptions } from '../../../src/main/ffmpeg/ffmpeg-service';
+import { MediaService } from '../../../src/main/media';
+import type { FfmpegService } from '../../../src/main/ffmpeg/ffmpeg-service';
+import { ProjectExportService, buildCopyFilename, escapeFilterValue, formatSrtTimestamp, serializeSrt, validateSubtitleTiming } from '../../../src/main/export';
 import type { SubtitleTrack } from '../../../src/shared/types/subtitles';
-import type { SubtitleStyle } from '../../../src/shared/types/style';
+import type { MediaProbeRequest, MediaProbeResult } from '../../../src/shared/types/media';
 
-describe('SRT export', () => {
-  it('serializes subtitle tracks with SRT timestamps', () => {
-    const track: SubtitleTrack = {
-      id: 'track-1',
-      kind: 'translation',
-      language: 'sr-Latn',
-      sourceLanguage: 'en',
-      targetLanguage: 'sr-Latn',
-      segments: [
-        { id: 'a', startMs: 0, endMs: 2400, text: 'Primer titla', language: 'sr-Latn' },
-        { id: 'b', startMs: 2500, endMs: 5000, text: 'Sledeci segment', language: 'sr-Latn' }
-      ]
-    };
+type FakeRun = (args: string[], options: FfmpegRunOptions) => Promise<{ stdout: string; stderr: string }>;
 
-    expect(serializeSrt(track)).toBe(
-      ['1', '00:00:00,000 --> 00:00:02,400', 'Primer titla', '', '2', '00:00:02,500 --> 00:00:05,000', 'Sledeci segment', ''].join('\n')
-    );
+/** Fake ffmpeg: records calls, writes the output file, and runs the scenario hook. */
+function fakeFfmpeg(scenario: FakeRun = writeOutput) {
+  const calls: Array<{ args: string[]; assDocument?: string }> = [];
+  const service = {
+    run: async (args: string[], options: FfmpegRunOptions = {}) => {
+      const assPath = assPathFrom(args);
+      const call: { args: string[]; assDocument?: string } = { args };
+      if (assPath) {
+        call.assDocument = await readFile(assPath, 'utf8');
+      }
+      calls.push(call);
+      return scenario(args, options);
+    }
+  };
+  return { service, calls };
+}
+
+/** The fake source is not a video, so the probe is faked: a 720x1280 display size unless a test overrides it. */
+function fakeProbe(size: { width: number; height: number } = { width: 720, height: 1280 }) {
+  const calls: MediaProbeRequest[] = [];
+  const probe = async (input: MediaProbeRequest): Promise<MediaProbeResult> => {
+    calls.push(input);
+    return { inputPath: input.inputPath, hasVideo: true, hasAudio: true, durationMs: 4000, ...size };
+  };
+  return { probe, calls };
+}
+
+async function writeOutput(args: string[]): Promise<{ stdout: string; stderr: string }> {
+  await writeFile(args[args.length - 1], 'fake mp4', 'utf8');
+  return { stdout: '', stderr: '' };
+}
+
+function assPathFrom(args: string[]): string | undefined {
+  const filter = args[args.indexOf('-vf') + 1] ?? '';
+  const match = /,ass=filename=(.+?):fontsdir=/.exec(filter);
+  return match ? match[1].replace(/\\\\\\(.)/g, '$1') : undefined;
+}
+
+const captions: CaptionRow[] = [
+  { id: 'before', startMs: 0, endMs: 900, original: 'Before the trim', translation: 'Pre trima' },
+  { id: 'crosses-start', startMs: 900, endMs: 2200, original: 'Crosses the start', translation: 'Seca pocetak' },
+  { id: 'crosses-end', startMs: 2500, endMs: 3500, original: 'Crosses the end', translation: 'Prelazi kraj' }
+];
+
+async function setup(overrides: Partial<ProjectExportRequest> = {}, files: Record<string, string> = {}) {
+  const folder = await mkdtemp(join(tmpdir(), 'tajtlisha-export-test-'));
+  await writeFile(join(folder, 'source.mp4'), 'source video');
+  for (const [name, content] of Object.entries(files)) {
+    await writeFile(join(folder, name), content, 'utf8');
+  }
+  const request: ProjectExportRequest = {
+    jobId: 'job-1',
+    inputPath: join(folder, 'source.mp4'),
+    outputFolder: folder,
+    baseName: 'clip',
+    videoWidth: 720,
+    videoHeight: 1280,
+    trim: { startMs: 1000, endMs: 3000 },
+    captions,
+    sourceLanguage: 'en',
+    targetLanguage: 'sr-Latn',
+    style: DEFAULT_SUBTITLE_STYLE,
+    outputs: { originalSrt: true, translationSrt: true, video: 'none' },
+    overwritePolicy: 'ask',
+    ...overrides
+  };
+  return { folder, request };
+}
+
+async function expectAppError(promise: Promise<unknown>, code: string): Promise<AppError> {
+  const error = await promise.then(
+    () => {
+      throw new Error(`Expected ${code}`);
+    },
+    (caught: unknown) => caught
+  );
+  expect(error).toBeInstanceOf(AppError);
+  expect((error as AppError).code).toBe(code);
+  return error as AppError;
+}
+
+describe('project export validation', () => {
+  it('rejects a request with nothing to export before writing anything', async () => {
+    const { folder, request } = await setup({ outputs: { originalSrt: false, translationSrt: false, video: 'none' } });
+    const { service, calls } = fakeFfmpeg();
+
+    try {
+      await expectAppError(new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request), 'NOTHING_TO_EXPORT');
+      expect(await readdir(folder)).toEqual(['source.mp4']);
+      expect(calls).toHaveLength(0);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
   });
 
-  it('validates negative, inverted, and overlapping timing', () => {
+  it('rejects invalid trim ranges', async () => {
+    const { folder, request } = await setup();
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      await expectAppError(service.exportProject({ ...request, trim: { startMs: 2000, endMs: 2000 } }), 'INVALID_TRIM');
+      await expectAppError(service.exportProject({ ...request, trim: { startMs: -1, endMs: 2000 } }), 'INVALID_TRIM');
+      await expectAppError(service.exportProject({ ...request, trim: { startMs: 3000, endMs: 1000 } }), 'INVALID_TRIM');
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects base names with separators or dot segments, and missing folders', async () => {
+    const { folder, request } = await setup();
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      for (const baseName of ['', '   ', 'a/b', 'a\\b', '.', '..']) {
+        await expectAppError(service.exportProject({ ...request, baseName }), 'OUTPUT_FOLDER_INVALID');
+      }
+      await expectAppError(service.exportProject({ ...request, outputFolder: join(folder, 'missing') }), 'OUTPUT_FOLDER_INVALID');
+      await expectAppError(service.exportProject({ ...request, outputFolder: join(folder, 'source.mp4') }), 'OUTPUT_FOLDER_INVALID');
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a missing source file', async () => {
+    const { folder, request } = await setup({ inputPath: join(tmpdir(), 'tajtlisha-no-such-file.mp4') });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      await expectAppError(service.exportProject(request), 'SOURCE_MISSING');
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('reports overlapping captions by id with INVALID_TIMING', async () => {
+    const { folder, request } = await setup({
+      captions: [
+        { id: 'a', startMs: 1200, endMs: 2000, original: 'A', translation: 'A' },
+        { id: 'b', startMs: 1500, endMs: 2500, original: 'B', translation: 'B' }
+      ]
+    });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      const error = await expectAppError(service.exportProject(request), 'INVALID_TIMING');
+      expect(error.detail).toBe('b (overlap)');
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses translation output while captions still lack a translation', async () => {
+    const { folder, request } = await setup({
+      captions: [
+        { id: 'a', startMs: 1200, endMs: 2000, original: 'A', translation: '' },
+        { id: 'b', startMs: 2100, endMs: 2500, original: 'B', translation: '' },
+        { id: 'c', startMs: 2600, endMs: 2800, original: '', translation: '' }
+      ]
+    });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      const error = await expectAppError(service.exportProject(request), 'TRANSLATION_INCOMPLETE');
+      expect(error.detail).toContain('2 caption(s)');
+      expect(await readdir(folder)).toEqual(['source.mp4']);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('project export outputs', () => {
+  it('shifts and clips captions to the trim range and writes SRT files from 00:00:00', async () => {
+    const { folder, request } = await setup();
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      const result = await service.exportProject(request);
+
+      expect(result.files).toEqual([
+        { kind: 'original_srt', path: join(folder, 'clip.en.srt') },
+        { kind: 'translation_srt', path: join(folder, 'clip.sr-Latn.srt') }
+      ]);
+      expect(await readFile(join(folder, 'clip.en.srt'), 'utf8')).toBe(
+        [
+          '1',
+          '00:00:00,000 --> 00:00:01,200',
+          'Crosses the start',
+          '',
+          '2',
+          '00:00:01,500 --> 00:00:02,000',
+          'Crosses the end',
+          ''
+        ].join('\n')
+      );
+      expect(await readFile(join(folder, 'clip.sr-Latn.srt'), 'utf8')).toContain('Seca pocetak');
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('skips rows with empty original text for original outputs', async () => {
+    const { folder, request } = await setup({
+      captions: [
+        { id: 'a', startMs: 1200, endMs: 1800, original: '', translation: 'Samo prevod' },
+        { id: 'b', startMs: 2000, endMs: 2500, original: 'Original', translation: 'Prevod' }
+      ],
+      outputs: { originalSrt: true, translationSrt: false, video: 'none' }
+    });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      await service.exportProject(request);
+      const srt = await readFile(join(folder, 'clip.en.srt'), 'utf8');
+      expect(srt).toBe('1\n00:00:01,000 --> 00:00:01,500\nOriginal\n');
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps line breaks inside one SRT cue', async () => {
+    const { folder, request } = await setup({
+      captions: [{ id: 'a', startMs: 1200, endMs: 2000, original: 'Prvi red\nDrugi red', translation: 'x' }],
+      outputs: { originalSrt: true, translationSrt: false, video: 'none' }
+    });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      await service.exportProject(request);
+      expect(await readFile(join(folder, 'clip.en.srt'), 'utf8')).toBe('1\n00:00:00,200 --> 00:00:01,000\nPrvi red\nDrugi red\n');
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('never calls ffmpeg for SRT-only exports', async () => {
+    const { folder, request } = await setup();
+    const { service, calls } = fakeFfmpeg();
+
+    try {
+      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request);
+      expect(calls).toHaveLength(0);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('renders the video from the trim start with the ASS file and the chosen text field', async () => {
+    const { folder, request } = await setup({ outputs: { originalSrt: false, translationSrt: false, video: 'translation' } });
+    const { service, calls } = fakeFfmpeg();
+
+    try {
+      const result = await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request);
+      const args = calls[0].args;
+
+      expect(result.files).toEqual([{ kind: 'video', path: join(folder, 'clip.subtitled.mp4') }]);
+      expect(args.slice(0, 8)).toEqual(['-y', '-ss', '1.000', '-i', join(folder, 'source.mp4'), '-t', '2.000', '-map']);
+      expect(args).toEqual(expect.arrayContaining(['-f', 'mp4', '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac']));
+      // ffmpeg writes into a fresh staging folder inside the output folder, never to the final name.
+      expect(dirname(dirname(args[args.length - 1]))).toBe(folder);
+      expect(basename(dirname(args[args.length - 1]))).toMatch(/^\.tajtlisha-export-/);
+      expect(args[args.indexOf('-vf') + 1]).toMatch(/^scale=720:1280,setsar=1,ass=filename=.+:fontsdir=\/fonts$/);
+      expect(calls[0].assDocument).toContain('PlayResX: 720');
+      expect(calls[0].assDocument).toContain('Dialogue: 0,0:00:00.00,0:00:01.20,Default,,0,0,0,,Seca pocetak');
+      expect(calls[0].assDocument).toContain('Dialogue: 0,0:00:01.50,0:00:02.00,Default,,0,0,0,,Prelazi kraj');
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('removes the temporary ASS folder after rendering', async () => {
+    const { folder, request } = await setup({ outputs: { originalSrt: false, translationSrt: false, video: 'original' } });
+    let assPath = '';
+    const { service } = fakeFfmpeg(async (args) => {
+      assPath = assPathFrom(args) ?? '';
+      await writeOutput(args);
+      return { stdout: '', stderr: '' };
+    });
+
+    try {
+      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request);
+      expect(assPath).not.toBe('');
+      await expect(access(assPath)).rejects.toThrow();
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('reports rendering progress as a 0..1 fraction and then writing_srt', async () => {
+    const { folder, request } = await setup();
+    const events: Array<{ stage: string; progress?: number }> = [];
+    const { service } = fakeFfmpeg(async (args, options) => {
+      options.onProgress?.(500);
+      options.onProgress?.(1000);
+      options.onProgress?.(5000);
+      await writeOutput(args);
+      return { stdout: '', stderr: '' };
+    });
+
+    try {
+      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(
+        { ...request, outputs: { originalSrt: true, translationSrt: false, video: 'original' } },
+        { onProgress: (event) => events.push(event) }
+      );
+
+      expect(events).toEqual([
+        { stage: 'rendering_video', progress: 0 },
+        { stage: 'rendering_video', progress: 0.25 },
+        { stage: 'rendering_video', progress: 0.5 },
+        { stage: 'rendering_video', progress: 1 },
+        { stage: 'writing_srt' }
+      ]);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('project export file policy', () => {
+  it('refuses to overwrite the source video', async () => {
+    // The input is itself a planned output: baseName "source" + source language "en" gives "source.en.srt".
+    const { folder, request } = await setup({ baseName: 'source' });
+    const inputPath = join(folder, 'source.en.srt');
+    await writeFile(inputPath, 'source');
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      await expectAppError(service.exportProject({ ...request, inputPath }), 'OUTPUT_IS_SOURCE');
+      expect(await readFile(inputPath, 'utf8')).toBe('source');
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('asks with OUTPUT_EXISTS and touches nothing when a planned file exists', async () => {
+    const { folder, request } = await setup({}, { 'clip.sr-Latn.srt': 'keep me' });
+    const { service, calls } = fakeFfmpeg();
+
+    try {
+      const error = await expectAppError(
+        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject({
+          ...request,
+          outputs: { originalSrt: true, translationSrt: true, video: 'original' }
+        }),
+        'OUTPUT_EXISTS'
+      );
+      expect(error.detail).toBe(join(folder, 'clip.sr-Latn.srt'));
+      expect(await readFile(join(folder, 'clip.sr-Latn.srt'), 'utf8')).toBe('keep me');
+      expect(await readdir(folder)).toHaveLength(2);
+      expect(calls).toHaveLength(0);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('create_copy writes the whole bundle under the next free copy number', async () => {
+    const { folder, request } = await setup(
+      {},
+      { 'clip.en.srt': 'old', 'clip.en (2).srt': 'older', 'clip.subtitled.mp4': 'old video' }
+    );
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      const result = await service.exportProject({
+        ...request,
+        outputs: { originalSrt: true, translationSrt: true, video: 'original' },
+        overwritePolicy: 'create_copy'
+      });
+
+      expect(result.files.map((file) => file.path)).toEqual([
+        join(folder, 'clip.en (3).srt'),
+        join(folder, 'clip.sr-Latn (3).srt'),
+        join(folder, 'clip.subtitled (3).mp4')
+      ]);
+      expect(await readFile(join(folder, 'clip.en.srt'), 'utf8')).toBe('old');
+      expect(await readFile(join(folder, 'clip.subtitled.mp4'), 'utf8')).toBe('old video');
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('overwrite replaces existing outputs', async () => {
+    const { folder, request } = await setup({ overwritePolicy: 'overwrite' }, { 'clip.en.srt': 'old' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      await service.exportProject({ ...request, outputs: { originalSrt: true, translationSrt: false, video: 'none' } });
+      expect(await readFile(join(folder, 'clip.en.srt'), 'utf8')).toContain('Crosses the start');
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses two outputs with the same name when source and target language match', async () => {
+    const { folder, request } = await setup({ targetLanguage: 'en' });
+    const service = new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe });
+
+    try {
+      await expectAppError(service.exportProject(request), 'OUTPUT_FOLDER_INVALID');
+      expect(await readdir(folder)).toEqual(['source.mp4']);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('removes temp files and leaves no outputs when ffmpeg fails', async () => {
+    const { folder, request } = await setup();
+    const { service } = fakeFfmpeg(async (args) => {
+      await writeFile(args[args.length - 1], 'partial', 'utf8');
+      throw new AppError('FFMPEG_FAILED', 'boom');
+    });
+
+    try {
+      await expectAppError(
+        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject({
+          ...request,
+          outputs: { originalSrt: true, translationSrt: true, video: 'original' }
+        }),
+        'FFMPEG_FAILED'
+      );
+      expect(await readdir(folder)).toEqual(['source.mp4']);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('removes temp files and rethrows JOB_CANCELED when the job is canceled mid-render', async () => {
+    const { folder, request } = await setup({ outputs: { originalSrt: true, translationSrt: false, video: 'original' } });
+    const controller = new AbortController();
+    const { service } = fakeFfmpeg(async (args) => {
+      await writeFile(args[args.length - 1], 'partial', 'utf8');
+      controller.abort();
+      throw new AppError('JOB_CANCELED');
+    });
+
+    try {
+      await expectAppError(
+        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request, { signal: controller.signal }),
+        'JOB_CANCELED'
+      );
+      expect(await readdir(folder)).toEqual(['source.mp4']);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('cancels before writing anything when the signal is already aborted', async () => {
+    const { folder, request } = await setup();
+    const controller = new AbortController();
+    controller.abort();
+    const { service, calls } = fakeFfmpeg();
+
+    try {
+      await expectAppError(
+        new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request, { signal: controller.signal }),
+        'JOB_CANCELED'
+      );
+      expect(await readdir(folder)).toEqual(['source.mp4']);
+      expect(calls).toHaveLength(0);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('sanitizes language tags in file names', async () => {
+    const { folder, request } = await setup({ sourceLanguage: 'en/US', targetLanguage: '  ' });
+
+    try {
+      const result = await new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject({
+        ...request,
+        outputs: { originalSrt: true, translationSrt: true, video: 'none' }
+      });
+      expect(result.files.map((file) => file.path)).toEqual([join(folder, 'clip.en-US.srt'), join(folder, 'clip.und.srt')]);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('project export geometry', () => {
+  it('lays out subtitles for the probed size and ignores the request size', async () => {
+    const { folder, request } = await setup({ videoWidth: 360, videoHeight: 640, outputs: { originalSrt: false, translationSrt: false, video: 'original' } });
+    const probe = fakeProbe({ width: 720, height: 1280 });
+    const { service, calls } = fakeFfmpeg();
+
+    try {
+      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: probe.probe }).exportProject(request);
+
+      expect(probe.calls).toEqual([{ inputPath: join(folder, 'source.mp4') }]);
+      expect(calls[0].assDocument).toContain('PlayResX: 720');
+      expect(calls[0].assDocument).toContain('PlayResY: 1280');
+      expect(calls[0].args[calls[0].args.indexOf('-vf') + 1]).toMatch(/^scale=720:1280,setsar=1,ass=/);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps VFR timing, leaves audio re-encoded, and never adds -copyts or a forced frame rate', async () => {
+    const { folder, request } = await setup({ outputs: { originalSrt: false, translationSrt: false, video: 'original' } });
+    const { service, calls } = fakeFfmpeg();
+
+    try {
+      await new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: fakeProbe().probe }).exportProject(request);
+      const args = calls[0].args;
+
+      expect(args[args.indexOf('-fps_mode:v') + 1]).toBe('passthrough');
+      expect(args).not.toContain('-copyts');
+      expect(args).not.toContain('-r');
+      expect(args[args.indexOf('-c:a') + 1]).toBe('aac');
+      expect(args).not.toContain('-c:a copy');
+      expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'));
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a source without a video stream before rendering', async () => {
+    const { folder, request } = await setup({ outputs: { originalSrt: false, translationSrt: false, video: 'original' } });
+    const audioOnly = async (input: MediaProbeRequest): Promise<MediaProbeResult> => ({ inputPath: input.inputPath, hasVideo: false, hasAudio: true });
+    const { service, calls } = fakeFfmpeg();
+
+    try {
+      await expectAppError(new ProjectExportService({ ffmpeg: service, fontsDir: '/fonts', probe: audioOnly }).exportProject(request), 'UNKNOWN');
+      expect(calls).toHaveLength(0);
+      expect(await readdir(folder)).toEqual(['source.mp4']);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('does not probe for SRT-only exports', async () => {
+    const { folder, request } = await setup();
+    const probe = fakeProbe();
+
+    try {
+      await new ProjectExportService({ ffmpeg: fakeFfmpeg().service, fontsDir: '/fonts', probe: probe.probe }).exportProject(request);
+      expect(probe.calls).toHaveLength(0);
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the display size from ffprobe, with the sample aspect ratio folded into the width', async () => {
+    const ffprobe = async () => ({
+      stdout: JSON.stringify({
+        format: { duration: '4.000' },
+        streams: [{ codec_type: 'video', width: 720, height: 576, sample_aspect_ratio: '4:3' }, { codec_type: 'audio' }]
+      }),
+      stderr: ''
+    });
+    const media = new MediaService({ ffprobe } as unknown as FfmpegService);
+
+    await expect(media.probe({ inputPath: '/clips/anamorphic.mkv' })).resolves.toMatchObject({ hasVideo: true, width: 960, height: 576 });
+  });
+});
+
+describe('export helpers', () => {
+  it('escapes filter option values for the two-level ffmpeg parser', () => {
+    expect(escapeFilterValue('/a b/c:d,e')).toBe('/a b/c\\\\\\:d\\\\\\,e');
+    expect(escapeFilterValue("it's\\x")).toBe("it\\\\\\'s\\\\\\\\x");
+  });
+
+  it('builds copy file names with a space and number before the extension', () => {
+    expect(buildCopyFilename('/out/clip.en.srt', 1)).toBe('/out/clip.en (2).srt');
+    expect(buildCopyFilename('/out/clip.subtitled.mp4', 2)).toBe('/out/clip.subtitled (3).mp4');
+  });
+
+  it('formats SRT timestamps', () => {
+    expect(formatSrtTimestamp(3_723_004)).toBe('01:02:03,004');
+  });
+
+  it('validates timing and refuses to serialize invalid tracks', () => {
     const track: SubtitleTrack = {
       id: 'track-1',
       kind: 'original',
@@ -39,246 +598,23 @@ describe('SRT export', () => {
       ]
     };
 
-    expect(validateSubtitleTiming(track).map((issue) => issue.code)).toEqual(['negative_start', 'non_positive_duration', 'overlap']);
+    expect(validateSubtitleTiming(track.segments).map((issue) => issue.code)).toEqual(['negative_start', 'non_positive_duration', 'overlap']);
+    expect(() => serializeSrt(track)).toThrow('[INVALID_TIMING]');
   });
 
-  it('builds export filenames from pattern tokens', () => {
-    expect(
-      buildExportFilename({
-        inputPath: '/clips/source video.mp4',
-        outputFolder: '/out',
-        track: { kind: 'translation', language: 'sr-Latn', targetLanguage: 'sr-Latn' },
-        extension: 'srt',
-        pattern: '{name}.{language}.{track}'
-      })
-    ).toBe('/out/source video.sr-Latn.translation.srt');
-
-    expect(buildCopyFilename('/out/source.srt', 1)).toBe('/out/source (2).srt');
-    expect(formatSrtTimestamp(3_723_004)).toBe('01:02:03,004');
-  });
-
-  it('burns subtitles through ffmpeg with a temporary SRT file and style filter', async () => {
-    const calls: string[][] = [];
-    let srtPath = '';
-
-    const ffmpeg = {
-      ffmpegPath: 'ffmpeg',
-      ffprobePath: 'ffprobe',
-      getStatus: async () => ({ available: true as const, path: 'ffmpeg' }),
-      ffprobe: async () => ({ stdout: '{}', stderr: '' }),
-      run: async (args: string[]) => {
-        calls.push(args);
-        const filter = args[args.indexOf('-vf') + 1];
-        const match = /^subtitles='([^']+)'/.exec(filter);
-        if (!match) {
-          throw new Error(`Unexpected subtitles filter: ${filter}`);
-        }
-        srtPath = match[1];
-        expect(await readFile(srtPath, 'utf8')).toContain('Primer titla');
-        return { stdout: '', stderr: '' };
-      }
+  it('serializes a subtitle track as SRT', () => {
+    const track: SubtitleTrack = {
+      id: 'track-1',
+      kind: 'translation',
+      language: 'sr-Latn',
+      segments: [
+        { id: 'a', startMs: 0, endMs: 2400, text: 'Primer titla', language: 'sr-Latn' },
+        { id: 'b', startMs: 2500, endMs: 5000, text: 'Sledeci segment', language: 'sr-Latn' }
+      ]
     };
 
-    const service = new SubtitleBurnService(ffmpeg);
-    await expect(
-      service.burnSubtitles({
-        inputPath: '/clips/input video.mp4',
-        outputPath: '/exports/output video.mp4',
-        track: sampleTrack,
-        style: sampleStyle
-      })
-    ).resolves.toEqual({ outputPath: '/exports/output video.mp4' });
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toEqual(
-      expect.arrayContaining(['-n', '-i', '/clips/input video.mp4', '-vf', expect.stringContaining('force_style='), '-c:a', 'copy', '/exports/output video.mp4'])
+    expect(serializeSrt(track)).toBe(
+      ['1', '00:00:00,000 --> 00:00:02,400', 'Primer titla', '', '2', '00:00:02,500 --> 00:00:05,000', 'Sledeci segment', ''].join('\n')
     );
-    expect(calls[0][calls[0].indexOf('-vf') + 1]).toContain('FontName=Inter Semi Bold');
-    await expect(access(srtPath)).rejects.toThrow();
-  });
-
-  it('exports a trimmed project bundle with SRTs and burned-in video', async () => {
-    const outputFolder = await mkdtemp(join(tmpdir(), 'tajtlisha-export-test-'));
-    const trimCalls: unknown[] = [];
-    const burnCalls: unknown[] = [];
-
-    const service = new ProjectExportService(
-      {
-        trim: async (input) => {
-          trimCalls.push(input);
-          return { outputPath: input.outputPath, durationMs: input.endMs - input.startMs };
-        }
-      },
-      {
-        burnSubtitles: async (input) => {
-          burnCalls.push(input);
-          return { outputPath: input.outputPath };
-        }
-      }
-    );
-
-    try {
-      const result = await service.exportProject({
-        inputPath: '/clips/source video.mp4',
-        outputFolder,
-        tracks: [sampleTrack],
-        style: sampleStyle,
-        trim: { startMs: 1000, endMs: 2200, knownDurationMs: 3000 },
-        exportOriginalSrt: false,
-        exportTranslatedSrt: true,
-        burnedInTrack: 'translation',
-        fileNamePattern: '{name}.{track}.{language}'
-      });
-
-      expect(result.translatedSrtPath).toBe(join(outputFolder, 'source video.translation.sr-Latn.srt'));
-      expect(result.burnedInVideoPath).toBe(join(outputFolder, 'source video.translation.sr-Latn.burned.mp4'));
-      expect(await readFile(result.translatedSrtPath ?? '', 'utf8')).toContain('00:00:00,000 --> 00:00:01,200');
-      expect(trimCalls).toHaveLength(1);
-      expect(burnCalls).toEqual([
-        expect.objectContaining({
-          outputPath: result.burnedInVideoPath,
-          track: expect.objectContaining({
-            segments: [expect.objectContaining({ startMs: 0, endMs: 1200 })]
-          })
-        })
-      ]);
-    } finally {
-      await rm(outputFolder, { recursive: true, force: true });
-    }
-  });
-
-  it('stops before writing when ask policy finds an existing output', async () => {
-    const outputFolder = await mkdtemp(join(tmpdir(), 'tajtlisha-export-conflict-'));
-    const existingSrtPath = join(outputFolder, 'source video.translation.srt');
-    const burnCalls: unknown[] = [];
-    await writeFile(existingSrtPath, 'keep this subtitle', 'utf8');
-    const service = new ProjectExportService(
-      { trim: async () => ({ outputPath: '', durationMs: 0 }) },
-      { burnSubtitles: async (input) => {
-        burnCalls.push(input);
-        return { outputPath: input.outputPath };
-      } }
-    );
-
-    try {
-      await expect(
-        service.exportProject({
-          inputPath: '/clips/source video.mp4',
-          outputFolder,
-          tracks: [sampleTrack],
-          style: sampleStyle,
-          exportOriginalSrt: false,
-          exportTranslatedSrt: true,
-          burnedInTrack: 'translation'
-        })
-      ).rejects.toMatchObject({ code: 'EXPORT_OUTPUT_CONFLICT', paths: [existingSrtPath] } satisfies Partial<ExportOutputConflictError>);
-      expect(await readFile(existingSrtPath, 'utf8')).toBe('keep this subtitle');
-      expect(burnCalls).toHaveLength(0);
-    } finally {
-      await rm(outputFolder, { recursive: true, force: true });
-    }
-  });
-
-  it('creates distinct copy names for existing and duplicate planned outputs', async () => {
-    const outputFolder = await mkdtemp(join(tmpdir(), 'tajtlisha-export-copy-'));
-    const existingSrtPath = join(outputFolder, 'source video.translation.srt');
-    const existingVideoPath = join(outputFolder, 'source video.translation.burned.mp4');
-    const burnCalls: unknown[] = [];
-    await Promise.all([writeFile(existingSrtPath, 'existing', 'utf8'), writeFile(existingVideoPath, 'existing', 'utf8')]);
-    const service = new ProjectExportService(
-      { trim: async () => ({ outputPath: '', durationMs: 0 }) },
-      { burnSubtitles: async (input) => {
-        burnCalls.push(input);
-        return { outputPath: input.outputPath };
-      } }
-    );
-
-    try {
-      const result = await service.exportProject({
-        inputPath: '/clips/source video.mp4',
-        outputFolder,
-        tracks: [sampleTrack],
-        style: sampleStyle,
-        exportOriginalSrt: false,
-        exportTranslatedSrt: true,
-        burnedInTrack: 'translation',
-        overwritePolicy: 'create_copy'
-      });
-
-      expect(result).toEqual({
-        translatedSrtPath: join(outputFolder, 'source video.translation (2).srt'),
-        burnedInVideoPath: join(outputFolder, 'source video.translation.burned (2).mp4')
-      });
-      expect(await readFile(existingSrtPath, 'utf8')).toBe('existing');
-      expect(burnCalls).toEqual([expect.objectContaining({ outputPath: result.burnedInVideoPath, overwriteExisting: false })]);
-    } finally {
-      await rm(outputFolder, { recursive: true, force: true });
-    }
-  });
-
-  it('rejects a missing output folder and filename patterns that escape it', async () => {
-    const outputFolder = await mkdtemp(join(tmpdir(), 'tajtlisha-export-folder-'));
-    const service = new ProjectExportService(
-      { trim: async () => ({ outputPath: '', durationMs: 0 }) },
-      { burnSubtitles: async (input) => ({ outputPath: input.outputPath }) }
-    );
-
-    try {
-      await expect(
-        service.exportProject({
-          inputPath: '/clips/source video.mp4',
-          outputFolder: join(outputFolder, 'missing'),
-          tracks: [sampleTrack],
-          style: sampleStyle,
-          exportOriginalSrt: false,
-          exportTranslatedSrt: false,
-          burnedInTrack: 'translation'
-        })
-      ).rejects.toThrow('outputFolder must be an existing directory.');
-
-      await expect(
-        service.exportProject({
-          inputPath: '/clips/source video.mp4',
-          outputFolder,
-          tracks: [sampleTrack],
-          style: sampleStyle,
-          exportOriginalSrt: true,
-          exportTranslatedSrt: false,
-          burnedInTrack: 'translation',
-          fileNamePattern: '../outside'
-        })
-      ).rejects.toThrow('fileNamePattern must produce files inside outputFolder.');
-    } finally {
-      await rm(outputFolder, { recursive: true, force: true });
-    }
   });
 });
-
-const sampleTrack: SubtitleTrack = {
-  id: 'track-1',
-  kind: 'translation',
-  language: 'sr-Latn',
-  sourceLanguage: 'en',
-  targetLanguage: 'sr-Latn',
-  segments: [{ id: 'a', startMs: 0, endMs: 2400, text: 'Primer titla', language: 'sr-Latn' }]
-};
-
-const sampleStyle: SubtitleStyle = {
-  fontFamily: 'Inter, Semi Bold',
-  fontSizePx: 42,
-  fontWeight: 'semibold',
-  italic: false,
-  textColor: '#fff2aa',
-  outlineEnabled: true,
-  outlineColor: '#101010',
-  outlineWidthPx: 2,
-  shadowEnabled: true,
-  shadowColor: '#000000',
-  shadowBlurPx: 3,
-  shadowOffsetX: 1,
-  shadowOffsetY: 2,
-  position: 'bottom',
-  align: 'center',
-  maxWidthPercent: 84,
-  maxLines: 2
-};

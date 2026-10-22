@@ -5,33 +5,30 @@ import type {
   ProviderModelDescriptor,
   ProviderStatus,
   ProviderSummary,
-  SubtitlePolishRequest,
-  TestConnectionResult,
-  TranscriptionRequest,
-  TranscriptionResult,
-  TranslationRequest
+  TestConnectionResult
 } from '../../shared/types/ai';
-import type { SubtitleTrack } from '../../shared/types/subtitles';
+import { AppError } from '../../shared/errors';
 import type { CredentialStore } from '../credentials/credential-store';
 import { OpenAiProvider } from './openai-provider';
 import { OpenRouterProvider } from './openrouter-provider';
-import { PlaceholderAiProvider, type AiProvider, type ProviderDefinition } from './provider';
+import type {
+  AiProvider,
+  ProviderPolishRequest,
+  ProviderTextItem,
+  ProviderTranscribeRequest,
+  ProviderTranscribeResult,
+  ProviderTranslateRequest
+} from './provider';
 
 export class AiProviderRegistry {
   private readonly providers = new Map<AiProviderId, AiProvider>();
   private readonly credentialStore: CredentialStore;
 
-  constructor(definitions: ProviderDefinition[], credentialStore: CredentialStore) {
+  constructor(providers: AiProvider[], credentialStore: CredentialStore) {
     this.credentialStore = credentialStore;
 
-    for (const definition of definitions) {
-      const provider =
-        definition.id === 'openai'
-          ? new OpenAiProvider({ credentialStore })
-          : definition.id === 'openrouter'
-            ? new OpenRouterProvider({ credentialStore })
-          : new PlaceholderAiProvider(definition, { credentialStore });
-      this.providers.set(definition.id, provider);
+    for (const provider of providers) {
+      this.providers.set(provider.id, provider);
     }
   }
 
@@ -94,16 +91,25 @@ export class AiProviderRegistry {
     return this.requireProvider(providerId).listModels(capability);
   }
 
-  async transcribe(providerId: AiProviderId, request: TranscriptionRequest): Promise<TranscriptionResult> {
-    return this.requireProvider(providerId).transcribe(request);
+  async transcribe(providerId: AiProviderId, request: ProviderTranscribeRequest): Promise<ProviderTranscribeResult> {
+    return this.requireCapable(providerId, 'transcription').transcribe(request);
   }
 
-  async translate(providerId: AiProviderId, request: TranslationRequest): Promise<SubtitleTrack> {
-    return this.requireProvider(providerId).translate(request);
+  async translateTexts(providerId: AiProviderId, request: ProviderTranslateRequest): Promise<ProviderTextItem[]> {
+    return this.requireCapable(providerId, 'translation').translateTexts(request);
   }
 
-  async polishSubtitles(providerId: AiProviderId, request: SubtitlePolishRequest): Promise<SubtitleTrack> {
-    return this.requireProvider(providerId).polishSubtitles(request);
+  async polishTexts(providerId: AiProviderId, request: ProviderPolishRequest): Promise<ProviderTextItem[]> {
+    return this.requireCapable(providerId, 'subtitlePolish').polishTexts(request);
+  }
+
+  private requireCapable(providerId: AiProviderId, capability: keyof AiProviderCapabilities): AiProvider {
+    const provider = this.requireProvider(providerId);
+    if (!provider.capabilities[capability]) {
+      throw new AppError('PROVIDER_UNSUPPORTED', `${provider.displayName} does not support ${capability}.`);
+    }
+
+    return provider;
   }
 
   private requireProvider(providerId: AiProviderId): AiProvider {
@@ -127,4 +133,8 @@ export class AiProviderRegistry {
   private async maskedCredential(providerId: AiProviderId): Promise<string | undefined> {
     return (await this.credentialStore.getMaskedStatus(providerId)).maskedCredential;
   }
+}
+
+export function createProviders(credentialStore: CredentialStore): AiProvider[] {
+  return [new OpenAiProvider({ credentialStore }), new OpenRouterProvider({ credentialStore })];
 }
