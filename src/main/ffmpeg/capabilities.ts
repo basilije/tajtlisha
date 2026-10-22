@@ -44,9 +44,12 @@ export async function checkFfmpegCapabilities(ffmpeg: Pick<FfmpegService, 'ffmpe
   return { ...capabilities, missing: missingCapabilities(capabilities) };
 }
 
-/** Filter names from `ffmpeg -filters`. Flag columns are three characters, e.g. ` ..C ass  V->V  Render ...`. */
+/**
+ * Filter names from `ffmpeg -filters`. The flag column is three characters in
+ * ffmpeg <= 7 (` ..C ass  V->V ...`) and two in ffmpeg 8 (` .. ass  V->V ...`).
+ */
 export function parseFilterNames(text: string): Set<string> {
-  return namesFrom(text, /^\s*[.TSC]{3}\s+([a-z0-9_]+)\s/);
+  return namesFrom(text, /^\s*[.A-Z]{2,3}\s+([a-z0-9_]+)\s+\S+->\S+/);
 }
 
 /** Encoder names from `ffmpeg -encoders`. Flag columns are six characters, e.g. ` V....D libx264  H.264 ...`. */

@@ -51,7 +51,7 @@ or update path.
 | 9 | Editor page and app shell integration, keyboard shortcuts, quit flush, screenshots | `feat/editor-integration` | merged |
 | 9b | Settings redesign: sections, provider/model choices with timing badges, export defaults, About with updates and ffmpeg diagnostics | `feat/settings-redesign` | merged |
 | 10 | Sol review, E2E against a real clip, preview vs export frame comparison | `develop` | merged |
-| 11 | Release v0.2.0 | `master` + tag `v0.2.0` | in progress |
+| 11 | Release v0.2.0 | `master` + tag `v0.2.0` | released |
 
 ## Pre-release (Sol renderer review of develop at 03d8be8)
 
@@ -142,3 +142,7 @@ or update path.
 - 2026-10-22: Owner tested the app and likes it. Sol reviewed the renderer: 6 must-fix (all reproduced) -> R1.
   Quit contract now reports whether pending work was saved.
 - 2026-10-22: fix/pre-release-review merged (240 local, 97 AI, 375 renderer tests). Version bumped to 0.2.0.
+- 2026-10-22: v0.2.0 released by the workflow (Linux and Windows builds green; publish step failed because the job had
+  no checkout and gh had no repository - published manually, workflow fixed). Downloaded the released AppImage and
+  launched it: version 0.2.0, packaged, bundled ffmpeg found, but the capability check wrongly reported the ass
+  filter missing (ffmpeg 8 prints a two-character flag column). Fixed and released as v0.2.1.
