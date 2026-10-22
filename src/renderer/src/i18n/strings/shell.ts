@@ -106,6 +106,10 @@ export const shellStrings = {
       captions: 'Captions',
       generate: 'AI steps'
     },
+    layout: {
+      resizeColumns: 'Resize captions and preview',
+      resizeStyle: 'Resize preview and subtitle style'
+    },
     dismiss: 'Dismiss',
     projectLoad: {
       title: 'The saved project could not be loaded',
@@ -215,6 +219,10 @@ export const shellStrings = {
       captions: 'Titlovi',
       generate: 'AI koraci'
     },
+    layout: {
+      resizeColumns: 'Promeni širinu titlova i pregleda',
+      resizeStyle: 'Promeni visinu pregleda i stila titlova'
+    },
     dismiss: 'Zatvori',
     projectLoad: {
       title: 'Sačuvani projekat nije mogao da se učita',
@@ -323,6 +331,10 @@ export const shellStrings = {
       preview: 'Преглед',
       captions: 'Титлови',
       generate: 'AI кораци'
+    },
+    layout: {
+      resizeColumns: 'Промени ширину титлова и прегледа',
+      resizeStyle: 'Промени висину прегледа и стила титлова'
     },
     dismiss: 'Затвори',
     projectLoad: {
