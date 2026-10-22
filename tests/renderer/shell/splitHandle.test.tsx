@@ -121,6 +121,22 @@ describe('SplitHandle', () => {
     expect(frameStep).not.toHaveBeenCalled();
   });
 
+  it('lets playback keys it does not use reach the editor shortcuts', () => {
+    const toggle = vi.fn();
+
+    function Harness() {
+      useKeyboardShortcuts([{ key: ' ', handler: toggle }]);
+      return <SplitHandle orientation="vertical" label="Resize" value={500} min={420} max={668} onValueChange={vi.fn()} onValueCommit={vi.fn()} onReset={vi.fn()} />;
+    }
+    render(<Harness />);
+
+    // Focus stays on the handle after a drag; Space must still play or pause.
+    const handle = screen.getByRole('separator');
+    handle.focus();
+    fireEvent.keyDown(handle, { key: ' ' });
+    expect(toggle).toHaveBeenCalledTimes(1);
+  });
+
   it('drags a vertical handle by the pointer distance and commits once on release', () => {
     const { props, handle } = renderHandle();
 

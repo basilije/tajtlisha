@@ -279,7 +279,7 @@ export function EditorPage({
       />
 
       <section
-        className="editor-column editor-column-side"
+        className={styleOpen ? 'editor-column editor-column-side has-style-drawer' : 'editor-column editor-column-side'}
         ref={layout.sideRef}
         aria-label={t('shell.areas.preview')}
       >

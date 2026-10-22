@@ -35,4 +35,50 @@ describe('useAppRuntime page zoom', () => {
     expect(setZoomFactor).toHaveBeenLastCalledWith(1.3);
     expect(update).toHaveBeenCalledWith({ uiZoomPercent: 130 });
   });
+
+  it('ignores an older settings response that arrives while a newer change is pending', async () => {
+    const pending: Array<{ patch: Partial<typeof mockSettings>; resolve: () => void }> = [];
+    let stored = { ...mockSettings, uiZoomPercent: 100 };
+    const update = vi.fn(
+      (patch: Partial<typeof mockSettings>) =>
+        new Promise<typeof mockSettings>((resolve) => {
+          pending.push({
+            patch,
+            resolve: () => {
+              stored = { ...stored, ...patch };
+              resolve(stored);
+            }
+          });
+        })
+    );
+    installFakeApi({
+      settings: { get: async () => stored, update },
+      ai: { listProviders: async () => [], getProviderStatus: async () => undefined },
+      app: { setZoomFactor: vi.fn() }
+    });
+
+    const { result } = renderHook(() => useAppRuntime(mockSettings), { wrapper });
+    await waitFor(() => expect(result.current.phase).toBe('ready'));
+
+    let first: Promise<void> = Promise.resolve();
+    let second: Promise<void> = Promise.resolve();
+    act(() => {
+      first = result.current.updateSettings({ uiZoomPercent: 105 });
+      second = result.current.updateSettings({ uiZoomPercent: 110 });
+    });
+    expect(result.current.settings.uiZoomPercent).toBe(110);
+
+    // The first write answers while the second is still pending: it must not roll back to 105.
+    await act(async () => {
+      pending[0]!.resolve();
+      await first;
+    });
+    expect(result.current.settings.uiZoomPercent).toBe(110);
+
+    await act(async () => {
+      pending[1]!.resolve();
+      await second;
+    });
+    expect(result.current.settings.uiZoomPercent).toBe(110);
+  });
 });

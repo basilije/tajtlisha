@@ -29,7 +29,6 @@ const INTERACTIVE_SELECTOR = [
   '[role="radio"]',
   '[role="switch"]',
   '[role="slider"]',
-  '[role="separator"]',
   '[role="spinbutton"]',
   '[role="tab"]',
   '[role="menuitem"]',
