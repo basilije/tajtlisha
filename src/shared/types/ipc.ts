@@ -158,7 +158,8 @@ export type TajtlishaApi = {
      * pending autosave) and reports a QuitReadyResult. A listener that rejects
      * means its data could NOT be saved: main then asks the user (Retry / Quit
      * without saving / Cancel) instead of silently quitting. Main waits for the
-     * answer (with a timeout), then cancels and drains jobs, cleans temp files
+     * answer (renderers that never answer are skipped after a timeout; the
+     * unsaved-work question itself waits for the user), then cancels and drains jobs, cleans temp files
      * and quits. Returns an unsubscribe function.
      */
     onPrepareQuit(listener: () => Promise<void> | void): () => void;

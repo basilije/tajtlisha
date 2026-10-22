@@ -6,9 +6,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
+Rebuilt editor and export pipeline. Highlights: subtitles in the exported video now look exactly like the
+preview, AI transcription returns proper per-word timing, the project is saved automatically and survives
+Settings and restarts, and there are Windows and Linux installers with in-app updates.
+
 ### Added
 - Shared project model: one caption row holds a single timing pair with original and translated text.
-- Resolution-independent subtitle style (sizes relative to video height) with one geometry helper shared by preview and export.
+- Resolution-independent subtitle style (sizes relative to the video's shorter side) with one geometry helper shared by preview and export.
 - Bundled Noto Sans fonts (SIL OFL 1.1) so preview and burned-in export use the same font.
 - Job model for long operations: progress events and cancellation.
 - Auto-update contract (GitHub Releases via electron-updater) and app info IPC.
@@ -56,5 +62,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 - Default OpenAI transcription model does not return timestamps.
 - Opening Settings discards the current project.
 
-[Unreleased]: https://github.com/blonestar/tajtlisha/compare/v0.1.0...develop
+[Unreleased]: https://github.com/blonestar/tajtlisha/compare/v0.2.0...develop
+[0.2.0]: https://github.com/blonestar/tajtlisha/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/blonestar/tajtlisha/releases/tag/v0.1.0
