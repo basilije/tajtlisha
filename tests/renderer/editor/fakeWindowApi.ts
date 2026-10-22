@@ -97,6 +97,7 @@ export function createWindowApi(
     },
     app: {
       getInfo: vi.fn(() => Promise.resolve({ version: '0.2.0', platform: 'linux', isPackaged: false })),
+      setZoomFactor: vi.fn(),
       onPrepareQuit: vi.fn(() => () => undefined)
     }
   } as unknown as TajtlishaApi;

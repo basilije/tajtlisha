@@ -9,6 +9,7 @@ export const mockSettings: AppSettings = {
   autosaveEnabled: true,
   recentFilesEnabled: true,
   neverModifyOriginalVideo: true,
+  uiZoomPercent: 100,
   exportDefaults: {
     exportOriginalSrt: true,
     exportTranslatedSrt: true,

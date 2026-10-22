@@ -21,7 +21,8 @@ const latinOverrides: Record<string, string> = {
 };
 
 // Latin tokens that are allowed inside sr-Cyrl text (technical or product names).
-const allowedLatinTokens = ['Tajtlisha', 'OpenAI', 'OpenRouter', 'FFmpeg', 'SRT', 'MP4', 'API', 'AI'];
+// Ctrl is a keyboard key name, kept in Latin in Serbian Cyrillic UI too.
+const allowedLatinTokens = ['Tajtlisha', 'OpenAI', 'OpenRouter', 'FFmpeg', 'SRT', 'MP4', 'API', 'AI', 'Ctrl'];
 
 const placeholderPattern = /(\{\{[^}]+\}\})/;
 

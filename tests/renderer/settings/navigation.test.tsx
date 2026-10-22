@@ -38,7 +38,7 @@ describe('SettingsPage navigation', () => {
 
   it('loads the About section and shows the app version', async () => {
     installFakeApi({
-      app: { getInfo: async () => ({ version: '0.2.0', platform: 'linux', isPackaged: true }) },
+      app: { getInfo: async () => ({ version: '0.2.0', platform: 'linux', isPackaged: true }), setZoomFactor: () => undefined },
       updates: {
         getState: async () => updateState({ status: 'idle' }),
         onState: () => () => undefined
