@@ -57,7 +57,7 @@ export function requireOneOf<T extends string>(value: unknown, allowed: readonly
 }
 
 export function requireProviderId(value: unknown): AiProviderId {
-  return requireOneOf<AiProviderId>(value, ['openai', 'openrouter'], 'providerId');
+  return requireOneOf<AiProviderId>(value, ['openai', 'openrouter', 'opus'], 'providerId');
 }
 
 export function requireTimeRange(value: unknown, field: string): { startMs: number; endMs: number } {

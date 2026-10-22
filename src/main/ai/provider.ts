@@ -62,6 +62,32 @@ export type ProviderTranslateRequest = ProviderTextBaseRequest & {
   targetLanguage: string;
 };
 
+export type ProviderVideoCue = {
+  id: string;
+  text: string;
+  startMs: number;
+  endMs: number;
+};
+
+export type ProviderVideoTranslateRequest = {
+  inputPath: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  cues: ProviderVideoCue[];
+  signal?: AbortSignal;
+  onProgress?: (progress: number) => void;
+};
+
+export type ProviderCreditReport = {
+  beforeMinutes: number | null;
+  afterMinutes: number | null;
+};
+
+export type ProviderVideoTranslateResult = {
+  items: ProviderTextItem[];
+  credits: ProviderCreditReport;
+};
+
 export type ProviderPolishMode = 'conservative' | 'social_caption';
 
 export type ProviderPolishRequest = ProviderTextBaseRequest & {
@@ -70,10 +96,13 @@ export type ProviderPolishRequest = ProviderTextBaseRequest & {
 };
 
 export interface AiProvider extends ProviderSummary {
+  /** True when translation is a billed video job, not a text-model call. */
+  readonly translatesFromVideo: boolean;
   listModels(capability: keyof AiProviderCapabilities): Promise<ProviderModelDescriptor[]>;
   testConnection(): Promise<TestConnectionResult>;
   transcribe(request: ProviderTranscribeRequest): Promise<ProviderTranscribeResult>;
   translateTexts(request: ProviderTranslateRequest): Promise<ProviderTextItem[]>;
+  translateFromVideo(request: ProviderVideoTranslateRequest): Promise<ProviderVideoTranslateResult>;
   polishTexts(request: ProviderPolishRequest): Promise<ProviderTextItem[]>;
 }
 
@@ -94,6 +123,7 @@ export abstract class BaseAiProvider implements AiProvider {
   readonly displayName: string;
   readonly authModes: AuthMode[];
   readonly capabilities: AiProviderCapabilities;
+  readonly translatesFromVideo: boolean = false;
 
   private readonly modelDescriptors: ProviderModelDescriptor[];
   protected readonly credentialStore: CredentialStore;
@@ -146,6 +176,10 @@ export abstract class BaseAiProvider implements AiProvider {
 
   translateTexts(_request: ProviderTranslateRequest): Promise<ProviderTextItem[]> {
     return Promise.reject(this.unsupported('translation'));
+  }
+
+  translateFromVideo(_request: ProviderVideoTranslateRequest): Promise<ProviderVideoTranslateResult> {
+    return Promise.reject(this.unsupported('video translation'));
   }
 
   polishTexts(_request: ProviderPolishRequest): Promise<ProviderTextItem[]> {
@@ -236,7 +270,7 @@ async function readApiErrorMessage(response: Response, secret: string): Promise<
 /** Removes the active key and anything that looks like an API key from text. */
 export function scrubSecrets(text: string, secret: string): string {
   const withoutSecret = secret ? text.split(secret).join('[redacted]') : text;
-  return withoutSecret.replace(/\b(sk|sk-or|sk-proj)-[A-Za-z0-9_-]{6,}/g, '[redacted]');
+  return withoutSecret.replace(/\b(?:sk-or|sk-proj|sk)[_-][A-Za-z0-9_-]{6,}/g, '[redacted]');
 }
 
 function throwIfAbort(error: unknown, signal?: AbortSignal): void {

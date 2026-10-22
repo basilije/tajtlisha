@@ -309,6 +309,41 @@ function numbered(count: number): ProviderTextItem[] {
 }
 
 describe('SubtitleWorkflowService.translate', () => {
+  it('asks Opus once for the open video and keeps the credit report', async () => {
+    const translateFromVideo = vi.fn(async () => ({
+      items: [
+        { id: 'a', text: 'zdravo' },
+        { id: 'b', text: 'svete' }
+      ],
+      credits: { beforeMinutes: 1972, afterMinutes: 1942 }
+    }));
+    const registry = fakeRegistry({
+      deliversTranslationsFromVideo: () => true,
+      translateFromVideo
+    } as never);
+    const { service } = createService({ registry });
+
+    const result = await service.translate(
+      translateRequest({
+        providerId: 'opus',
+        inputPath: '/clips/source.mp4',
+        captions: [
+          { id: 'a', text: 'hello', startMs: 0, endMs: 1000 },
+          { id: 'b', text: 'world', startMs: 1000, endMs: 2000 }
+        ]
+      })
+    );
+
+    expect(translateFromVideo).toHaveBeenCalledTimes(1);
+    expect(registry.translateTexts).not.toHaveBeenCalled();
+    expect(registry.polishTexts).not.toHaveBeenCalled();
+    expect(result.translations).toEqual([
+      { id: 'a', text: 'zdravo' },
+      { id: 'b', text: 'svete' }
+    ]);
+    expect(result.credits).toEqual({ beforeMinutes: 1972, afterMinutes: 1942 });
+  });
+
   it('translates in batches of 40 and returns translations in request order', async () => {
     const registry = fakeRegistry();
     const { service } = createService({ registry });

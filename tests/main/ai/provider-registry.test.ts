@@ -5,13 +5,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryCredentialStore } from '../../../src/main/credentials/memory-credential-store';
 import { OpenAiProvider } from '../../../src/main/ai/openai-provider';
 import { OpenRouterProvider } from '../../../src/main/ai/openrouter-provider';
+import { OpusProvider } from '../../../src/main/ai/opus-provider';
 import { AiProviderRegistry, createDefaultAiProviderRegistry } from '../../../src/main/ai';
 import type { AiProvider } from '../../../src/main/ai/provider';
 import type { AiProviderCapabilities, ProviderSummary } from '../../../src/shared/types/ai';
 import { AppError } from '../../../src/shared/errors';
 
 function createRegistry(store = new MemoryCredentialStore()): AiProviderRegistry {
-  return createDefaultAiProviderRegistry(store);
+  return new AiProviderRegistry(
+    [
+      new OpenAiProvider({ credentialStore: store }),
+      new OpenRouterProvider({ credentialStore: store }),
+      new OpusProvider({ credentialStore: store })
+    ],
+    store
+  );
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -23,10 +31,20 @@ afterEach(() => {
 });
 
 describe('AI provider registry', () => {
+  it('ships with Opus as the only provider', async () => {
+    const providers = await createDefaultAiProviderRegistry().listProviders();
+    expect(providers.map((provider) => provider.id)).toEqual(['opus']);
+  });
+
   it('lists OpenAI and OpenRouter with truthful capability flags', async () => {
     const providers = await createRegistry().listProviders();
 
-    expect(providers.map((provider) => provider.id)).toEqual(['openai', 'openrouter']);
+    expect(providers.map((provider) => provider.id)).toEqual(['openai', 'openrouter', 'opus']);
+    expect(providers.find((provider) => provider.id === 'opus')?.capabilities).toMatchObject({
+      transcription: false,
+      translation: true,
+      subtitlePolish: false
+    });
     expect(providers.find((provider) => provider.id === 'openrouter')?.capabilities).toMatchObject({
       transcription: true,
       wordTimestamps: false,
@@ -233,10 +251,12 @@ describe('AI provider registry', () => {
         subtitlePolish: false,
         textToSpeech: false
       } satisfies AiProviderCapabilities,
+      translatesFromVideo: false,
       listModels: async () => [],
       testConnection: async () => ({ ok: true, providerId: 'openrouter', checkedAt: '' }),
       transcribe: vi.fn(),
       translateTexts: vi.fn(async () => []),
+      translateFromVideo: vi.fn(),
       polishTexts: vi.fn(async () => [])
     };
     const store = new MemoryCredentialStore();

@@ -32,6 +32,7 @@ export function registerWorkflowIpc({ ipc, jobs, workflow, sources }: WorkflowIp
 
   ipc.handle(IPC_CHANNELS.workflowTranslate, (event, payload: unknown) => {
     const request = toTranslateRequest(payload);
+    if (request.inputPath) requireKnownSource(sources, request.inputPath);
     return runJob(jobs, event.sender, request.jobId, (context) => workflow.translate(request, context));
   });
 }
@@ -60,9 +61,12 @@ function toTranslateRequest(payload: unknown): TranslateCaptionsRequest {
     modelId: optionalString(input.modelId, 'modelId'),
     sourceLanguage: requireString(input.sourceLanguage, 'sourceLanguage'),
     targetLanguage: requireString(input.targetLanguage, 'targetLanguage'),
+    inputPath: optionalString(input.inputPath, 'inputPath'),
     captions: requireArray(input.captions, 'captions').map((caption, index) => {
       const row = requireRecord(caption, `captions[${index}]`);
-      return { id: requireString(row.id, `captions[${index}].id`), text: requireText(row.text, `captions[${index}].text`) };
+      const startMs = optionalNumber(row.startMs, `captions[${index}].startMs`);
+      const endMs = optionalNumber(row.endMs, `captions[${index}].endMs`);
+      return { id: requireString(row.id, `captions[${index}].id`), text: requireText(row.text, `captions[${index}].text`), startMs, endMs };
     }),
     polish: toPolishMode(input.polish),
     maxCharsPerLine: requireFiniteNumber(input.maxCharsPerLine, 'maxCharsPerLine'),
@@ -76,4 +80,8 @@ function toPolishMode(value: unknown): PolishMode {
 
 function optionalString(value: unknown, field: string): string | undefined {
   return value === undefined ? undefined : requireString(value, field);
+}
+
+function optionalNumber(value: unknown, field: string): number | undefined {
+  return value === undefined ? undefined : requireFiniteNumber(value, field);
 }

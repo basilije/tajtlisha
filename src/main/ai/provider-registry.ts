@@ -9,15 +9,16 @@ import type {
 } from '../../shared/types/ai';
 import { AppError } from '../../shared/errors';
 import type { CredentialStore } from '../credentials/credential-store';
-import { OpenAiProvider } from './openai-provider';
-import { OpenRouterProvider } from './openrouter-provider';
+import { OpusProvider } from './opus-provider';
 import type {
   AiProvider,
   ProviderPolishRequest,
   ProviderTextItem,
   ProviderTranscribeRequest,
   ProviderTranscribeResult,
-  ProviderTranslateRequest
+  ProviderTranslateRequest,
+  ProviderVideoTranslateRequest,
+  ProviderVideoTranslateResult
 } from './provider';
 
 export class AiProviderRegistry {
@@ -99,6 +100,21 @@ export class AiProviderRegistry {
     return this.requireCapable(providerId, 'translation').translateTexts(request);
   }
 
+  deliversTranslationsFromVideo(providerId: AiProviderId): boolean {
+    return this.requireProvider(providerId).translatesFromVideo;
+  }
+
+  async translateFromVideo(
+    providerId: AiProviderId,
+    request: ProviderVideoTranslateRequest
+  ): Promise<ProviderVideoTranslateResult> {
+    const provider = this.requireCapable(providerId, 'translation');
+    if (!provider.translatesFromVideo) {
+      throw new AppError('PROVIDER_UNSUPPORTED', `${provider.displayName} does not translate from video.`);
+    }
+    return provider.translateFromVideo(request);
+  }
+
   async polishTexts(providerId: AiProviderId, request: ProviderPolishRequest): Promise<ProviderTextItem[]> {
     return this.requireCapable(providerId, 'subtitlePolish').polishTexts(request);
   }
@@ -135,6 +151,7 @@ export class AiProviderRegistry {
   }
 }
 
+/** This build ships with Opus only. OpenAI and OpenRouter stay in the tree for their own tests. */
 export function createProviders(credentialStore: CredentialStore): AiProvider[] {
-  return [new OpenAiProvider({ credentialStore }), new OpenRouterProvider({ credentialStore })];
+  return [new OpusProvider({ credentialStore })];
 }

@@ -239,7 +239,13 @@ export function useWorkspace({ store, settings, providers, job }: WorkspaceOptio
           modelId: optionalModelId(config.aiConnector.textModelByProvider[providerId]),
           sourceLanguage: sourceLanguageCode(current),
           targetLanguage,
-          captions: rows.map((caption) => ({ id: caption.id, text: caption.original })),
+          inputPath: current.source?.inputPath,
+          captions: rows.map((caption) => ({
+            id: caption.id,
+            text: caption.original,
+            startMs: caption.startMs,
+            endMs: caption.endMs
+          })),
           polish: polishFor(config),
           maxCharsPerLine: captionLineLimit(current, config),
           maxLinesPerCaption: config.aiConnector.maxLinesPerCaption
@@ -273,13 +279,20 @@ export function useWorkspace({ store, settings, providers, job }: WorkspaceOptio
     dispatch({ type: 'captions/applyTranslations', translations, targetLanguage });
 
     const skipped = sent.size - translations.length;
+    const credits = outcome.value.credits;
+    const creditNote = credits
+      ? ` ${t('shell.result.credits', {
+          before: credits.beforeMinutes ?? '—',
+          after: credits.afterMinutes ?? '—'
+        })}`
+      : '';
     setJobResult({
       kind: 'translate',
       status: 'done',
       message:
-        skipped > 0
+        (skipped > 0
           ? t('shell.result.translatedSkipped', { count: translations.length, skipped })
-          : t('shell.result.translated', { count: translations.length })
+          : t('shell.result.translated', { count: translations.length })) + creditNote
     });
   }, [api, dispatch, job, t]);
 

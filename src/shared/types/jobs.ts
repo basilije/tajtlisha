@@ -60,15 +60,27 @@ export type TranslateCaptionsRequest = {
   modelId?: string;
   sourceLanguage: string;
   targetLanguage: string;
-  captions: Array<{ id: string; text: string }>;
+  /**
+   * Open video, required by providers that translate the media itself (Opus).
+   * Must be a path this session already opened.
+   */
+  inputPath?: string;
+  captions: Array<{ id: string; text: string; startMs?: number; endMs?: number }>;
   polish: PolishMode;
   maxCharsPerLine: number;
   maxLinesPerCaption: 1 | 2;
 };
 
+export type TranslationCredits = {
+  beforeMinutes: number | null;
+  afterMinutes: number | null;
+};
+
 export type TranslateCaptionsResult = {
   /** Exactly one entry per requested caption id, same order. Never silently falls back to source text. */
   translations: Array<{ id: string; text: string }>;
+  /** Present when the provider bills a credit balance, read before the job and again after it. */
+  credits?: TranslationCredits;
 };
 
 export type ExportOutputs = {

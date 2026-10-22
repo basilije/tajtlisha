@@ -15,7 +15,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     fileNamePattern: '{name}.{track}'
   },
   aiConnector: {
-    activeProviderId: 'openai',
+    activeProviderId: 'opus',
     authModeByProvider: {},
     // whisper-1 is the only OpenAI transcription model with word timestamps.
     transcriptionModelByProvider: { openai: 'whisper-1' },

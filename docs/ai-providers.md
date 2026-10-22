@@ -39,6 +39,7 @@ OpenRouter takodje ima STT endpoint za transkripciju:
 - OpenAI translation/polish koristi Responses API i structured output preko `text.format` JSON schema ugovora.
 - Main process ima subtitle workflow servis koji iz videa ekstraktuje privremeni audio, poziva provider za transkripciju, prevod i opcioni polish, pa renderer-u vraca originalni i prevedeni track.
 - OpenRouter ima runtime tok za transkripciju preko `/api/v1/audio/transcriptions`, kao i translation/polish preko `/api/v1/chat/completions`.
+- Ova verzija registruje samo Opus, za prevod postojeceg titla. Ne transkribuje i ne polira. Kljuc se cita iz `opus.key` pored programa ili u profilu (ili `OPUSCLIP_API_KEY` u lokalnom `.env` dok aplikacija nije zapakovana) i cuva u credential store. Prevod salje otvoreni video na `https://api.opus.pro/api` (`importPref.targetLang`, `skipSlicing`) i upisuje vraceni SRT u postojece redove, bez menjanja tajminga. Test konekcije i zavrsen posao prijavljuju stanje kredita pre i posle.
 - Settings ucitava OpenAI poznate modele i OpenRouter katalog modela za odgovarajuce capability-je.
 - OpenAI API key je jedini podrzani auth tok za ovu aplikaciju. ChatGPT/Codex login se ne koristi za OpenAI API pozive.
 

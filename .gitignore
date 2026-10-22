@@ -7,3 +7,5 @@ playwright-report
 .vitest-attachments
 release/
 vendor/ffmpeg/
+opus.key
+build/opus.key

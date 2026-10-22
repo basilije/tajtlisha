@@ -2,7 +2,8 @@ import { stat } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MemoryCredentialStore } from '../../../src/main/credentials/memory-credential-store';
-import { createDefaultAiProviderRegistry } from '../../../src/main/ai';
+import { AiProviderRegistry } from '../../../src/main/ai';
+import { OpenAiProvider } from '../../../src/main/ai/openai-provider';
 import { buildCaptionsFromWords } from '../../../src/main/ai/caption-builder';
 import type { ProviderAudioFormat } from '../../../src/main/ai/provider';
 
@@ -22,7 +23,7 @@ describe.skipIf(!live)('live OpenAI transcription and translation', () => {
 
     const credentialStore = new MemoryCredentialStore();
     await credentialStore.set({ providerId: 'openai', authMode: 'api_key', secret: liveKey as string });
-    const registry = createDefaultAiProviderRegistry(credentialStore);
+    const registry = new AiProviderRegistry([new OpenAiProvider({ credentialStore })], credentialStore);
 
     const transcription = await registry.transcribe('openai', {
       audioPath,

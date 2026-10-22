@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell } from 'electron';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createDefaultAiProviderRegistry, SubtitleWorkflowService } from './ai';
+import { importOpusKey, opusKeyCandidates } from './credentials/opus-key-file';
 import { SecureCredentialStore } from './credentials/secure-credential-store';
 import { ProjectExportService } from './export';
 import { FfmpegService } from './ffmpeg';
@@ -131,6 +132,15 @@ app.whenReady().then(async () => {
     filePath: join(app.getPath('userData'), 'credentials.json'),
     crypto: safeStorage
   });
+  await importOpusKey(
+    credentialStore,
+    opusKeyCandidates({
+      exeDir: dirname(app.getPath('exe')),
+      userDataDir: app.getPath('userData'),
+      appPath: app.getAppPath(),
+      isPackaged: app.isPackaged
+    })
+  );
   const aiRegistry = createDefaultAiProviderRegistry(credentialStore);
   const ffmpeg = new FfmpegService();
   const mediaService = new MediaService(ffmpeg);

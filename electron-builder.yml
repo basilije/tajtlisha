@@ -9,6 +9,9 @@ files:
   - '!out/**/*.map'
   - package.json
 asar: true
+extraFiles:
+  - from: build/opus.key.example
+    to: opus.key.example
 artifactName: ${productName}-${version}-${arch}.${ext}
 publish:
   provider: github

@@ -226,7 +226,9 @@ export function ProviderPanel({
         ) : null}
       </SettingsRow>
 
-      {connected ? (
+      {connected && !provider.capabilities.transcription && !provider.capabilities.subtitlePolish ? (
+        <p className="settings-card-note muted">{t('settings.ai.videoTranslationNote')}</p>
+      ) : connected ? (
         <>
           <SettingsRow
             label={t('settings.ai.transcriptionModel')}

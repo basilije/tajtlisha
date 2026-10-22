@@ -61,6 +61,8 @@ const baseResources = {
           testSucceeded: 'Connection test passed.',
           testFailed: 'Connection test failed.',
           connectToChooseModels: 'Connect this provider to choose its models.',
+          videoTranslationNote:
+            'Translation sends the open video to Opus and writes the returned subtitles onto the existing captions. Test connection shows the credit balance. A translate spends about one credit per minute of video.',
           transcriptionModel: 'Transcription model',
           transcriptionHint: 'Exact subtitle timing needs a model with word timing.',
           whisperRetired: '{{model}} has word timing, but OpenAI retires it on 2027-02-26.',
@@ -213,6 +215,8 @@ const baseResources = {
           testSucceeded: 'Provera veze je uspešna.',
           testFailed: 'Provera veze nije uspela.',
           connectToChooseModels: 'Povežite provajdera da biste izabrali modele.',
+          videoTranslationNote:
+            'Prevod šalje otvoreni video na Opus i upisuje vraćene titlove u postojeće redove. Provera veze pokazuje stanje kredita. Prevod troši otprilike jedan kredit po minutu videa.',
           transcriptionModel: 'Model za transkripciju',
           transcriptionHint: 'Tačno vreme titlova zahteva model sa vremenom po rečima.',
           whisperRetired: '{{model}} ima vreme po rečima, ali OpenAI ga ukida 2027-02-26.',
@@ -365,6 +369,8 @@ const baseResources = {
           testSucceeded: 'Провера везе је успешна.',
           testFailed: 'Провера везе није успела.',
           connectToChooseModels: 'Повежите провајдера да бисте изабрали моделе.',
+          videoTranslationNote:
+            'Превод шаље отворени видео на Opus и уписује враћене титлове у постојеће редове. Провера везе показује стање кредита. Превод троши отприлике један кредит по минуту видеа.',
           transcriptionModel: 'Модел за транскрипцију',
           transcriptionHint: 'Тачно време титлова захтева модел са временом по речима.',
           whisperRetired: '{{model}} има време по речима, али OpenAI га укида 2027-02-26.',

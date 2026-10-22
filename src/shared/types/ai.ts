@@ -1,4 +1,4 @@
-export type AiProviderId = 'openai' | 'openrouter';
+export type AiProviderId = 'openai' | 'openrouter' | 'opus';
 
 export type AuthMode = 'api_key' | 'codex_auth_experimental';
 

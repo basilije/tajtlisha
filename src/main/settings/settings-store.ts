@@ -112,6 +112,8 @@ function normalizeSettings(settings: AppSettings): AppSettings {
     uiZoomPercent: normalizeUiZoom(settings.uiZoomPercent),
     aiConnector: {
       ...settings.aiConnector,
+      // This build has a single provider. A saved openai/openrouter choice would point at nothing.
+      activeProviderId: 'opus',
       maxLinesPerCaption: settings.aiConnector.maxLinesPerCaption === 1 ? 1 : 2
     }
   };

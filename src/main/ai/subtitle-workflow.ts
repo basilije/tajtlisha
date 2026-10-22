@@ -17,7 +17,7 @@ import { MediaService } from '../media';
 import { validatePath } from '../media/contracts';
 import { buildCaptionsFromSegments, buildCaptionsFromSpeechRegions, buildCaptionsFromWords, type CaptionBuildOptions, type CaptionDraft } from './caption-builder';
 import type { AiProviderRegistry } from './provider-registry';
-import type { ProviderTextItem, ProviderTranscribeResult } from './provider';
+import type { ProviderTextItem, ProviderTranscribeResult, ProviderVideoTranslateResult } from './provider';
 import { detectSpeechRegions } from './speech-regions';
 
 export const TRANSLATION_BATCH_SIZE = 40;
@@ -41,9 +41,12 @@ type TextStage = Extract<JobStage, 'translating' | 'polishing'>;
  * Clip transcription and caption translation. Dependencies are injected so
  * tests can use fakes. ffmpeg runs only through FfmpegService and MediaService.
  */
+type WorkflowRegistry = Pick<AiProviderRegistry, 'transcribe' | 'translateTexts' | 'polishTexts'> &
+  Partial<Pick<AiProviderRegistry, 'deliversTranslationsFromVideo' | 'translateFromVideo'>>;
+
 export class SubtitleWorkflowService {
   constructor(
-    private readonly registry: Pick<AiProviderRegistry, 'transcribe' | 'translateTexts' | 'polishTexts'>,
+    private readonly registry: WorkflowRegistry,
     private readonly mediaService: Pick<MediaService, 'extractAudio'> = new MediaService(),
     private readonly ffmpeg: Pick<FfmpegService, 'run'> = new FfmpegService()
   ) {}
@@ -117,6 +120,10 @@ export class SubtitleWorkflowService {
       return { translations: [] };
     }
 
+    if (this.registry.deliversTranslationsFromVideo?.(request.providerId)) {
+      return this.translateFromVideo(request, context);
+    }
+
     const translated = await this.runTextStage(request.captions, 'translating', context, (items) =>
       this.registry.translateTexts(request.providerId, {
         items,
@@ -147,6 +154,53 @@ export class SubtitleWorkflowService {
     );
 
     return { translations: polished };
+  }
+
+  /**
+   * One billed video translation. Caption timing stays as edited; only the
+   * text is replaced. Polish is skipped because this provider has no text model.
+   * A second upload is not attempted when some rows do not overlap the result.
+   */
+  private async translateFromVideo(
+    request: TranslateCaptionsRequest,
+    context: WorkflowContext
+  ): Promise<TranslateCaptionsResult> {
+    if (!request.inputPath || !this.registry.translateFromVideo) {
+      throw new AppError('PROVIDER_REQUEST_FAILED', 'Opus translates the open video. Open the video and try again.');
+    }
+
+    const cues = request.captions.map((caption) => {
+      if (caption.startMs === undefined || caption.endMs === undefined || caption.endMs <= caption.startMs) {
+        throw new AppError('INVALID_TIMING', 'Every caption needs a start and end before Opus can translate it.');
+      }
+      return { id: caption.id, text: caption.text, startMs: caption.startMs, endMs: caption.endMs };
+    });
+
+    context.onProgress?.({ stage: 'translating', progress: 0 });
+    const result: ProviderVideoTranslateResult = await this.registry.translateFromVideo(request.providerId, {
+      inputPath: request.inputPath,
+      sourceLanguage: request.sourceLanguage,
+      targetLanguage: request.targetLanguage,
+      cues,
+      signal: context.signal,
+      onProgress: (progress) => context.onProgress?.({ stage: 'translating', progress })
+    });
+
+    const byId = new Map(result.items.map((item) => [item.id, item.text.trim()]));
+    const missing = cues.filter((cue) => !byId.get(cue.id));
+    if (missing.length > 0) {
+      const before = result.credits.beforeMinutes ?? 'unknown';
+      const after = result.credits.afterMinutes ?? 'unknown';
+      throw new AppError(
+        'TRANSLATION_INCOMPLETE',
+        `No text returned for caption ids: ${missing.map((cue) => cue.id).join(', ')}. Credits before ${before} min, after ${after} min.`
+      );
+    }
+
+    return {
+      translations: cues.map((cue) => ({ id: cue.id, text: byId.get(cue.id) ?? '' })),
+      credits: result.credits
+    };
   }
 
   private async extractAudio(
