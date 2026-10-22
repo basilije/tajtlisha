@@ -28,6 +28,13 @@ import { bundledFontsDir } from './resources-path';
 import { SettingsStore } from './settings';
 import { createDefaultUpdateService, scheduleStartupCheck } from './updater';
 
+// A separate profile folder (used by the E2E tests so they never touch the
+// user's real projects, settings or API keys). Must run before anything reads
+// the userData path.
+if (process.env.TAJTLISHA_USER_DATA_DIR) {
+  app.setPath('userData', process.env.TAJTLISHA_USER_DATA_DIR);
+}
+
 const isDev = Boolean(process.env.ELECTRON_RENDERER_URL);
 const localMediaProtocol = createLocalMediaProtocol();
 
@@ -119,7 +126,7 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   await localMediaProtocol.register();
 
-  const settingsStore = new SettingsStore();
+  const settingsStore = new SettingsStore({ filePath: join(app.getPath('userData'), 'settings.json') });
   const credentialStore = new SecureCredentialStore({
     filePath: join(app.getPath('userData'), 'credentials.json'),
     crypto: safeStorage

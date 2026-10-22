@@ -22,7 +22,8 @@ test('launches Tajtlisha, shows the empty state and opens Settings as an overlay
   const mainEntry = resolve(process.cwd(), 'out/main/index.js');
   test.skip(!existsSync(mainEntry), 'Run pnpm build before pnpm test:e2e.');
 
-  const app = await electron.launch({ args: [mainEntry] });
+  const userDataDir = mkdtempSync(join(tmpdir(), 'tajtlisha-e2e-profile-'));
+  const app = await electron.launch({ args: [mainEntry], env: { ...process.env, TAJTLISHA_USER_DATA_DIR: userDataDir } });
   try {
     const window = await app.firstWindow();
     await expect
@@ -39,7 +40,9 @@ test('launches Tajtlisha, shows the empty state and opens Settings as an overlay
     const emptyCard = window.locator('.empty-card');
     await expect(emptyCard.getByRole('button', { name: OPEN_VIDEO_NAME })).toBeVisible();
 
-    await window.getByRole('button', { name: SETTINGS_NAME }).click();
+    // force: skip the animation-frame stability check, which never completes while the
+    // session is locked (the compositor stops drawing the window).
+    await window.getByRole('button', { name: SETTINGS_NAME }).click({ force: true });
     const settings = window.getByRole('dialog');
     await expect(settings).toBeVisible();
 
@@ -48,6 +51,7 @@ test('launches Tajtlisha, shows the empty state and opens Settings as an overlay
     await expect(emptyCard).toBeVisible();
   } finally {
     await app.close();
+    rmSync(userDataDir, { force: true, recursive: true });
   }
 });
 
@@ -75,7 +79,8 @@ test('plays an ffmpeg preview proxy through the local media protocol', async () 
     inputPath
   ]);
 
-  const app = await electron.launch({ args: [mainEntry] });
+  const userDataDir = mkdtempSync(join(tmpdir(), 'tajtlisha-e2e-profile-'));
+  const app = await electron.launch({ args: [mainEntry], env: { ...process.env, TAJTLISHA_USER_DATA_DIR: userDataDir } });
   try {
     const page = await app.firstWindow();
     // Main only processes videos opened through the app, so open it through the
@@ -115,5 +120,6 @@ test('plays an ffmpeg preview proxy through the local media protocol', async () 
   } finally {
     await app.close();
     rmSync(tempFolder, { force: true, recursive: true });
+    rmSync(userDataDir, { force: true, recursive: true });
   }
 });
