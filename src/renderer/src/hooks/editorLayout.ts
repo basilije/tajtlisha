@@ -17,8 +17,8 @@ export const MIN_PREVIEW_PX = 320;
 /** Default drawer height as a share of the side column height. */
 export const DEFAULT_STYLE_DRAWER_SHARE = 0.4;
 export const MIN_STYLE_DRAWER_PX = 140;
-/** Height above the drawer splitter (preview head, video, trim bar) that always stays visible. */
-export const MIN_VIDEO_AREA_PX = 200;
+/** The video preview keeps at least this height. Matches `.editor-preview { min-height }` in app.css. */
+export const MIN_VIDEO_AREA_PX = 220;
 
 export const SPLITTER_STEP_PX = 16;
 export const SPLITTER_LARGE_STEP_PX = 64;
@@ -73,6 +73,11 @@ export function captionsFractionFor(widthPx: number, workspaceWidthPx: number): 
   return clamp(Math.round(widthPx), min, max) / available;
 }
 
+/**
+ * `columnHeightPx` in the drawer helpers is the height shared by the video
+ * preview, the splitter and the drawer: the side column minus the preview head,
+ * the trim bar and the gaps around them (see useEditorLayout).
+ */
 export function styleDrawerBounds(columnHeightPx: number): LayoutRange {
   return {
     min: MIN_STYLE_DRAWER_PX,

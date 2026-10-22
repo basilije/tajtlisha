@@ -79,9 +79,9 @@ describe('style drawer height', () => {
 
   it('keeps the video area above the splitter at its minimum', () => {
     const bounds = styleDrawerBounds(1000);
-    expect(bounds.max).toBe(1000 - 200 - SPLITTER_PX);
+    expect(bounds.max).toBe(1000 - 220 - SPLITTER_PX);
     expect(styleDrawerPx(5000, 1000)).toBe(bounds.max);
-    expect(clampStyleDrawerPx(500, 600)).toBe(388);
+    expect(clampStyleDrawerPx(500, 600)).toBe(368);
   });
 
   it('keeps the drawer at its minimum in a short column', () => {

@@ -59,10 +59,21 @@ export function useEditorLayout(): EditorLayoutControls {
   const measuredRef = useRef(measured);
 
   useLayoutEffect(() => {
+    // Fixed parts of the side column: the preview head, the trim bar and the
+    // two column gaps around the preview. The rest is shared by the video,
+    // the splitter and the drawer.
+    function fixedSideHeight(side: HTMLElement): number {
+      const head = side.querySelector('.editor-preview-head')?.getBoundingClientRect().height ?? 0;
+      const trim = side.querySelector('.editor-trim')?.getBoundingClientRect().height ?? 0;
+      const gap = Number.parseFloat(getComputedStyle(side).rowGap) || 0;
+      return head + trim + 2 * gap;
+    }
+
     function measure(): void {
       const workspace = workspaceRef.current?.getBoundingClientRect();
-      const side = sideRef.current?.getBoundingClientRect();
-      const next = { width: workspace?.width ?? 0, height: side?.height ?? 0 };
+      const side = sideRef.current;
+      const sideHeight = side ? Math.max(0, side.getBoundingClientRect().height - fixedSideHeight(side)) : 0;
+      const next = { width: workspace?.width ?? 0, height: sideHeight };
       measuredRef.current = next;
       setMeasured((current) =>
         current.width === next.width && current.height === next.height ? current : next
@@ -77,7 +88,11 @@ export function useEditorLayout(): EditorLayoutControls {
 
     const observer = new ResizeObserver(measure);
     if (workspaceRef.current) observer.observe(workspaceRef.current);
-    if (sideRef.current) observer.observe(sideRef.current);
+    if (sideRef.current) {
+      observer.observe(sideRef.current);
+      // The trim bar appears once a clip is loaded and changes the room left for the drawer.
+      for (const part of sideRef.current.querySelectorAll('.editor-preview-head, .editor-trim')) observer.observe(part);
+    }
     return () => observer.disconnect();
   }, []);
 

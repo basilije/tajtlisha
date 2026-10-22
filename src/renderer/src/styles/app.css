@@ -524,9 +524,10 @@ body.is-resizing-row video {
   min-height: 0;
   overflow-y: auto;
 }
-/* An explicit height from the horizontal splitter replaces the percentage cap. */
+/* An explicit height from the horizontal splitter replaces the percentage cap.
+   It may still shrink, so a short window never pushes the video below its minimum. */
 .editor-column-side > .style-drawer.style-drawer-sized {
-  flex: none;
+  flex: 0 1 auto;
   max-height: none;
 }
 /* Negative margins pull the splitter into the column's 8 px gaps, so the space between the panels stays 12 px. */
