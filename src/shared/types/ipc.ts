@@ -68,9 +68,19 @@ export const IPC_CHANNELS = {
   appGetInfo: 'app:getInfo',
   /** main -> renderer event: the app is about to quit; flush pending work. */
   appPrepareQuit: 'app:prepareQuit',
-  /** renderer -> main invoke: pending work for the given quit request is flushed. */
+  /**
+   * renderer -> main invoke: (requestId, QuitReadyResult). Sent after the
+   * renderer tried to flush pending work for that quit request.
+   */
   appQuitReady: 'app:quitReady'
 } as const;
+
+export type QuitReadyResult = {
+  /** False when at least one quit listener failed (e.g. the autosave could not be written). */
+  saved: boolean;
+  /** Short technical detail of the first failure, for the dialog. */
+  detail?: string;
+};
 
 export type TajtlishaApi = {
   settings: {
@@ -145,9 +155,11 @@ export type TajtlishaApi = {
     /**
      * Registers the quit handshake. When main is about to quit it notifies the
      * renderer; the preload awaits every registered listener (e.g. flushing the
-     * pending autosave) and then reports readiness. Main waits for that (with a
-     * timeout), then cancels and drains jobs, cleans temp files and quits.
-     * Returns an unsubscribe function.
+     * pending autosave) and reports a QuitReadyResult. A listener that rejects
+     * means its data could NOT be saved: main then asks the user (Retry / Quit
+     * without saving / Cancel) instead of silently quitting. Main waits for the
+     * answer (with a timeout), then cancels and drains jobs, cleans temp files
+     * and quits. Returns an unsubscribe function.
      */
     onPrepareQuit(listener: () => Promise<void> | void): () => void;
   };

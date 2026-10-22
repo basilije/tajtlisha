@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import { IPC_CHANNELS as C, type TajtlishaApi } from '../shared/types/ipc';
+import { IPC_CHANNELS as C, type QuitReadyResult, type TajtlishaApi } from '../shared/types/ipc';
 import type { JobProgressEvent } from '../shared/types/jobs';
 import type { UpdateState } from '../shared/types/updates';
 
@@ -66,13 +66,17 @@ const api: TajtlishaApi = {
   }
 };
 
-// Quit handshake: run every listener (errors must not block quitting), then
-// tell main this request id is ready.
+// Quit handshake: run every listener, then tell main whether everything was
+// saved. A rejected listener means unsaved data; main asks the user what to do.
 const quitListeners = new Set<() => Promise<void> | void>();
 ipcRenderer.on(C.appPrepareQuit, (_event, requestId: string) => {
-  void Promise.allSettled([...quitListeners].map((listener) => Promise.resolve().then(listener))).then(() =>
-    ipcRenderer.invoke(C.appQuitReady, requestId)
-  );
+  void Promise.allSettled([...quitListeners].map((listener) => Promise.resolve().then(listener))).then((results) => {
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    const result: QuitReadyResult = failure
+      ? { saved: false, detail: failure.reason instanceof Error ? failure.reason.message : String(failure.reason) }
+      : { saved: true };
+    return ipcRenderer.invoke(C.appQuitReady, requestId, result);
+  });
 });
 
 contextBridge.exposeInMainWorld('tajtlisha', api);
