@@ -48,7 +48,7 @@ or update path.
 
 | # | Task | Branch | Status |
 | --- | --- | --- | --- |
-| 9 | Editor page and app shell integration, keyboard shortcuts, quit flush, screenshots | `feat/editor-integration` | in progress |
+| 9 | Editor page and app shell integration, keyboard shortcuts, quit flush, screenshots | `feat/editor-integration` | merged |
 | 9b | Settings redesign: sections, provider/model choices with timing badges, export defaults, About with updates and ffmpeg diagnostics | `feat/settings-redesign` | merged |
 | 10 | Sol review, E2E against a real clip, preview vs export frame comparison | `develop` | todo |
 | 11 | Release v0.2.0 | `release/0.2.0` | todo |
@@ -111,3 +111,11 @@ or update path.
   via RPATH $ORIGIN/../lib and has libx264/aac/libmp3lame. packageManager pinned to pnpm@11.10.0 for CI.
 - 2026-10-22: feat/settings-redesign merged (43 tests, screenshots reviewed). Orchestrator: settings store treats ''
   as clearing optional text settings. Open: verify the header close icon in the integrated app.
+- 2026-10-22: feat/editor-integration merged. Orchestrator fixes: single settings overlay header with onClose,
+  font size relative to the video's shorter side (default 5.5%: about 29 chars per line on 720x1280), settings test
+  fixtures moved to tests, e2e opens the clip through selectVideo. Full run: 235 local, 97 AI, 360 renderer tests,
+  build and 2 e2e pass. Worktrees and merged branches removed.
+- 2026-10-22: Commit authors and electron-builder.yml history rewritten to the GitHub noreply address; v0.1.0
+  re-tagged. Public repo https://github.com/blonestar/tajtlisha created; master, develop and v0.1.0 pushed.
+- 2026-10-22: First CI run: Linux job green; Windows job showed real ffmpeg export works on Windows but two tests
+  assumed LF line endings and POSIX paths. Fixed (CRLF-safe parsing in ffmpeg helpers too).

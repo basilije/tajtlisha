@@ -30,7 +30,7 @@ export class FfmpegService {
   async getStatus(): Promise<FfmpegStatus> {
     try {
       const result = await runProcess(this.ffmpegPath, ['-version'], { timeoutMs: 3000 });
-      const firstLine = result.stdout.split('\n')[0]?.trim();
+      const firstLine = result.stdout.split(/\r?\n/)[0]?.trim();
       return {
         available: true,
         path: this.ffmpegPath,

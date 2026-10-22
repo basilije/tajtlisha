@@ -56,13 +56,13 @@ export function parseEncoderNames(text: string): Set<string> {
 
 /** The version from the first line, e.g. 'ffprobe version 8.1.3-static Copyright ...' -> '8.1.3'. */
 export function parseFfprobeVersion(text: string): string | undefined {
-  const match = /version\s+(\S+)/.exec(text.split('\n')[0] ?? '');
+  const match = /version\s+(\S+)/.exec(text.split(/\r?\n/)[0] ?? '');
   return match?.[1];
 }
 
 function namesFrom(text: string, pattern: RegExp): Set<string> {
   const names = new Set<string>();
-  for (const line of text.split('\n')) {
+  for (const line of text.split(/\r?\n/)) {
     const match = pattern.exec(line);
     if (match) names.add(match[1]);
   }

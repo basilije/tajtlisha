@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PreviewProxyCache } from '../../../src/main/project/preview-proxy-cache';
 
@@ -44,7 +44,7 @@ describe('PreviewProxyCache', () => {
 
     expect(newPreview).not.toBe(oldPreview);
     await vi.waitFor(async () => {
-      expect(await readdir(dir)).toEqual([join(newPreview).split('/').pop()]);
+      expect(await readdir(dir)).toEqual([basename(newPreview)]);
     });
   });
 

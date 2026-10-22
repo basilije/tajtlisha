@@ -101,5 +101,5 @@ function probe(path: string, entries: string, streamSelector?: string): string {
   if (result.status !== 0) {
     throw new Error(`ffprobe failed: ${result.stderr}`);
   }
-  return result.stdout.trim().split('\n').join(',');
+  return result.stdout.trim().split(/\r?\n/).join(',');
 }

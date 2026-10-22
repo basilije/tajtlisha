@@ -57,7 +57,7 @@ export function runProcess(command: string, args: string[], options: RunProcessO
       stdoutChunks.push(chunk);
       if (options.onStdoutLine) {
         pendingLine += chunk.toString('utf8');
-        const lines = pendingLine.split('\n');
+        const lines = pendingLine.split(/\r?\n/);
         pendingLine = lines.pop() ?? '';
         for (const line of lines) options.onStdoutLine(line.trim());
       }
@@ -85,5 +85,5 @@ export function runProcess(command: string, args: string[], options: RunProcessO
 
 /** Keeps error messages readable: ffmpeg prints a long banner before the real error. */
 function tail(text: string, maxLines = 12): string {
-  return text.trim().split('\n').slice(-maxLines).join('\n');
+  return text.trim().split(/\r?\n/).slice(-maxLines).join('\n');
 }
