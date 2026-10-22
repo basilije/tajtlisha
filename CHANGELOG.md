@@ -6,6 +6,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+### Fixed
+- Release notes in Settings > About are shown as plain text instead of raw HTML from GitHub.
+
 ## [0.2.1] - 2026-10-22
 
 ### Fixed

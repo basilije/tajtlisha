@@ -146,3 +146,6 @@ or update path.
   no checkout and gh had no repository - published manually, workflow fixed). Downloaded the released AppImage and
   launched it: version 0.2.0, packaged, bundled ffmpeg found, but the capability check wrongly reported the ass
   filter missing (ffmpeg 8 prints a two-character flag column). Fixed and released as v0.2.1.
+- 2026-10-22: v0.2.1 released fully by the workflow (build Linux + Windows, publish). End-to-end update test: the
+  released v0.2.0 AppImage found v0.2.1 (with release notes) and downloaded it. Release notes arrive as HTML;
+  converted to plain text on develop (ships in the next release).
