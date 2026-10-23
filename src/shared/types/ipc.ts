@@ -40,6 +40,7 @@ export const IPC_CHANNELS = {
   aiListModels: 'ai:listModels',
 
   projectSelectVideo: 'project:selectVideo',
+  projectImportSrt: 'project:importSrt',
   projectLoadLast: 'project:loadLast',
   projectSave: 'project:save',
   projectCreatePreviewProxy: 'project:createPreviewProxy',
@@ -82,6 +83,10 @@ export type QuitReadyResult = {
   detail?: string;
 };
 
+export type ImportedSrt = {
+  cues: Array<{ startMs: number; endMs: number; text: string }>;
+};
+
 export type TajtlishaApi = {
   settings: {
     get(): Promise<AppSettings>;
@@ -99,6 +104,8 @@ export type TajtlishaApi = {
   project: {
     /** Opens a file dialog and probes the video. Null when canceled. */
     selectVideo(): Promise<ProjectSource | null>;
+    /** Opens a file dialog and reads an SRT file. Null when canceled. */
+    importSrt(): Promise<ImportedSrt | null>;
     /**
      * Last opened project, or null when none was saved. Returned even when the
      * source video is missing so captions are never lost (relink via selectVideo).

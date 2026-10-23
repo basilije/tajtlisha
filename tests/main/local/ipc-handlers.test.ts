@@ -321,6 +321,60 @@ describe('project:selectVideo', () => {
     );
   });
 
+  it('reads an SRT file and returns null when the dialog is canceled', async () => {
+    const ipc = fakeIpc();
+    const dialogs = fakeDialogs({
+      showOpenDialog: vi
+        .fn()
+        .mockResolvedValueOnce({ canceled: false, filePaths: ['/subs/clip.srt'] })
+        .mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    });
+    registerProjectIpc({
+      ipc,
+      jobs: new JobRegistry(),
+      dialogs,
+      mediaService: { probe: vi.fn(), createPreviewProxy: vi.fn() } as never,
+      projectStore: { loadLast: vi.fn(), save: vi.fn() } as never,
+      previewProxies: { get: vi.fn() } as never,
+      exporter: { renderPreviewFrame: vi.fn() } as never,
+      createVideoUrl: fakeVideoUrl,
+      strings: async () => ENGLISH,
+      sources: new KnownSources(),
+      readSubtitleFile: async () => Buffer.from('1\n00:00:01,000 --> 00:00:02,000\nHello\n')
+    });
+
+    expect(await ipc.invoke(IPC_CHANNELS.projectImportSrt, fakeOwner(1))).toEqual({
+      cues: [{ startMs: 1000, endMs: 2000, text: 'Hello' }]
+    });
+    expect(dialogs.showOpenDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ filters: [{ name: ENGLISH.srtFilterName, extensions: ['srt'] }] })
+    );
+    expect(await ipc.invoke(IPC_CHANNELS.projectImportSrt, fakeOwner(1))).toBeNull();
+  });
+
+  it('rejects a subtitle file that has no cues', async () => {
+    const ipc = fakeIpc();
+    registerProjectIpc({
+      ipc,
+      jobs: new JobRegistry(),
+      dialogs: fakeDialogs({
+        showOpenDialog: vi.fn(async () => ({ canceled: false, filePaths: ['/subs/empty.srt'] }))
+      }),
+      mediaService: { probe: vi.fn(), createPreviewProxy: vi.fn() } as never,
+      projectStore: { loadLast: vi.fn(), save: vi.fn() } as never,
+      previewProxies: { get: vi.fn() } as never,
+      exporter: { renderPreviewFrame: vi.fn() } as never,
+      createVideoUrl: fakeVideoUrl,
+      strings: async () => ENGLISH,
+      sources: new KnownSources(),
+      readSubtitleFile: async () => Buffer.from('not a subtitle')
+    });
+
+    await expect(ipc.invoke(IPC_CHANNELS.projectImportSrt, fakeOwner(1))).rejects.toThrow(
+      '[UNKNOWN] The subtitle file has no captions.'
+    );
+  });
+
   it('rejects a file without a video stream', async () => {
     const { ipc } = setupProject({ hasVideo: false, hasAudio: true, durationMs: 4000 });
 

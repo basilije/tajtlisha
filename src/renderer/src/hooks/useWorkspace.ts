@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TajtlishaApi } from '../../../shared/types/ipc';
-import type { ProjectSource } from '../../../shared/types/project';
+import type { CaptionRow, ProjectSource } from '../../../shared/types/project';
 import type { ProviderStatus } from '../../../shared/types/ai';
 import type { AppSettings } from '../../../shared/types/settings';
 import type { GenerateProviderInfo } from '../components/workflow/GeneratePanel';
@@ -47,6 +47,8 @@ export type Workspace = {
   answerConfirm: (accept: boolean) => void;
   /** Asks for confirmation first when captions exist, because transcription replaces them. */
   requestTranscribe: () => void;
+  /** Reads an SRT file into the original track. Asks first when captions would be replaced. */
+  importSrt: () => void;
   translate: () => void;
   /** Opens a video. Asks first when captions would be dropped. */
   openVideo: () => void;
@@ -193,6 +195,42 @@ export function useWorkspace({ store, settings, providers, job }: WorkspaceOptio
     }
     apply();
   }, [api, dispatch, job, t]);
+
+  const importSrt = useCallback(() => {
+    if (!api || !projectRef.current.source) return;
+
+    const apply = (cues: Array<{ startMs: number; endMs: number; text: string }>) => {
+      const captions: CaptionRow[] = cues.map((cue) => ({
+        id: crypto.randomUUID(),
+        startMs: cue.startMs,
+        endMs: cue.endMs,
+        original: cue.text,
+        translation: ''
+      }));
+      dispatch({ type: 'captions/replaceAll', captions });
+      setNotice({ tone: 'info', text: t('shell.result.imported', { count: captions.length }) });
+    };
+
+    void (async () => {
+      try {
+        const imported = await api.project.importSrt();
+        if (!imported) return;
+        const count = projectRef.current.captions.length;
+        if (count === 0) {
+          apply(imported.cues);
+          return;
+        }
+        setConfirm({
+          title: t('shell.confirm.importSrtTitle'),
+          description: t('shell.confirm.importSrtBody', { count }),
+          confirmLabel: t('shell.confirm.importSrtAction'),
+          onConfirm: () => apply(imported.cues)
+        });
+      } catch (error) {
+        setNotice(noticeFromError(error));
+      }
+    })();
+  }, [api, dispatch, noticeFromError, t]);
 
   const requestTranscribe = useCallback(() => {
     const count = projectRef.current.captions.length;
@@ -356,6 +394,7 @@ export function useWorkspace({ store, settings, providers, job }: WorkspaceOptio
     confirm,
     answerConfirm,
     requestTranscribe,
+    importSrt,
     translate,
     openVideo,
     relinkVideo,

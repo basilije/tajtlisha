@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right.js';
 import CircleCheck from 'lucide-react/dist/esm/icons/circle-check.js';
 import AudioLines from 'lucide-react/dist/esm/icons/audio-lines.js';
+import FileUp from 'lucide-react/dist/esm/icons/file-up.js';
 import Sparkles from 'lucide-react/dist/esm/icons/sparkles.js';
 import TriangleAlert from 'lucide-react/dist/esm/icons/triangle-alert.js';
 import { PROJECT_LANGUAGES } from '../../../../shared/types/project';import './workflow.css';
@@ -29,6 +30,7 @@ export type GeneratePanelProps = {
   onSourceLanguageChange(code: string | 'auto'): void;
   onTargetLanguageChange(code: string): void;
   onTranscribe(): void;
+  onImportSrt(): void;
   onTranslate(): void;
   onOpenSettings(): void;
 };
@@ -47,6 +49,12 @@ function transcribeBlock(props: GeneratePanelProps): Reason | null {
   if (!props.provider.canTranscribe) {
     return { key: 'captions.generate.reason.cannotTranscribe', values: { provider: props.provider.displayName } };
   }
+  return null;
+}
+
+function importBlock(props: GeneratePanelProps): Reason | null {
+  if (props.busy) return { key: 'captions.generate.reason.busy' };
+  if (!props.hasSource) return { key: 'captions.generate.reason.noVideo' };
   return null;
 }
 
@@ -80,11 +88,13 @@ export function GeneratePanel(props: GeneratePanelProps): ReactElement {
     onSourceLanguageChange,
     onTargetLanguageChange,
     onTranscribe,
+    onImportSrt,
     onTranslate,
     onOpenSettings
   } = props;
 
   const transcribeReason = transcribeBlock(props);
+  const importReason = importBlock(props);
   const translateReason = translateBlock(props);
   const translateLabel =
     rowsNeedingTranslation > 0
@@ -184,6 +194,13 @@ export function GeneratePanel(props: GeneratePanelProps): ReactElement {
           {transcribeReason && (
             <span className="generate-reason">{t(transcribeReason.key, transcribeReason.values)}</span>
           )}
+        </div>
+        <div className="generate-action">
+          <button type="button" className="btn" disabled={importReason !== null} onClick={onImportSrt}>
+            <FileUp aria-hidden="true" size={14} />
+            {captionCount > 0 ? t('captions.generate.importSrtAgain') : t('captions.generate.importSrt')}
+          </button>
+          {importReason && <span className="generate-reason">{t(importReason.key, importReason.values)}</span>}
         </div>
         <div className="generate-action">
           <button

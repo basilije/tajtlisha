@@ -33,6 +33,7 @@ const api: TajtlishaApi = {
   },
   project: {
     selectVideo: () => ipcRenderer.invoke(C.projectSelectVideo),
+    importSrt: () => ipcRenderer.invoke(C.projectImportSrt),
     loadLast: () => ipcRenderer.invoke(C.projectLoadLast),
     save: (project) => ipcRenderer.invoke(C.projectSave, project),
     createPreviewProxy: (request) => ipcRenderer.invoke(C.projectCreatePreviewProxy, request),

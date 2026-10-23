@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { AppError } from '../../shared/errors';
 import { IPC_CHANNELS } from '../../shared/types/ipc';
 import type { ProjectSource } from '../../shared/types/project';
@@ -8,6 +9,7 @@ import type { MainStrings } from '../i18n';
 import { defaultStatFile, type ProjectStore, type StatFile } from '../project/project-store';
 import type { PreviewProxyCache } from '../project/preview-proxy-cache';
 import { KnownSources, requireKnownSource } from '../project/known-sources';
+import { decodeSubtitleBytes, parseSrtCues } from '../subtitles/parse-srt';
 import { validateProjectDocument } from '../project/project-schema';
 import {
   requireFiniteNumber,
@@ -32,7 +34,10 @@ export type ProjectIpcDeps = {
   /** Inputs the renderer may reference: picked this session or loaded from a project. */
   sources: KnownSources;
   statFile?: StatFile;
+  readSubtitleFile?: (path: string) => Promise<Uint8Array>;
 };
+
+const MAX_SRT_BYTES = 5 * 1024 * 1024;
 
 /** Extensions Chromium may or may not decode; files Chromium cannot play go through the preview proxy. */
 const VIDEO_EXTENSIONS = ['mp4', 'm4v', 'mov', 'mkv', 'webm'];
@@ -48,7 +53,8 @@ export function registerProjectIpc({
   createVideoUrl,
   strings,
   sources,
-  statFile = defaultStatFile
+  statFile = defaultStatFile,
+  readSubtitleFile = async (path) => new Uint8Array(await readFile(path))
 }: ProjectIpcDeps): void {
   ipc.handle(IPC_CHANNELS.projectSelectVideo, async () => {
     const s = await strings();
@@ -63,6 +69,34 @@ export function registerProjectIpc({
     const source = await buildProjectSource(inputPath);
     sources.remember(inputPath);
     return source;
+  });
+
+  ipc.handle(IPC_CHANNELS.projectImportSrt, async () => {
+    const s = await strings();
+    const result = await dialogs.showOpenDialog({
+      title: s.selectSrtTitle,
+      properties: ['openFile'],
+      filters: [{ name: s.srtFilterName, extensions: ['srt'] }]
+    });
+    const inputPath = result.canceled ? undefined : result.filePaths[0];
+    if (!inputPath) return null;
+
+    let bytes: Uint8Array;
+    try {
+      bytes = await readSubtitleFile(inputPath);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown error';
+      throw new AppError('UNKNOWN', `The subtitle file could not be read: ${reason}`);
+    }
+    if (bytes.byteLength > MAX_SRT_BYTES) {
+      throw new AppError('UNKNOWN', 'The subtitle file is too large.');
+    }
+
+    const cues = parseSrtCues(decodeSubtitleBytes(bytes));
+    if (cues.length === 0) {
+      throw new AppError('UNKNOWN', 'The subtitle file has no captions.');
+    }
+    return { cues };
   });
 
   ipc.handle(IPC_CHANNELS.projectLoadLast, async () => {

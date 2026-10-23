@@ -108,6 +108,8 @@ export const captionsStrings = {
       openSettings: 'Open Settings',
       transcribe: 'Transcribe',
       transcribeAgain: 'Transcribe again',
+      importSrt: 'Import SRT',
+      importSrtAgain: 'Import SRT again',
       translate: 'Translate',
       translateCount: 'Translate {{count}} rows',
       translateAgain: 'Translate again',
@@ -120,7 +122,7 @@ export const captionsStrings = {
         notConnected: 'Connect {{provider}} in Settings first',
         cannotTranscribe: '{{provider}} cannot transcribe audio',
         cannotTranslate: '{{provider}} cannot translate',
-        noCaptions: 'Transcribe the clip first',
+        noCaptions: 'Import an SRT file or transcribe the clip first',
         allTranslated: 'Every row is translated and up to date',
         busy: 'Wait for the current job to finish'
       }
@@ -287,6 +289,8 @@ export const captionsStrings = {
       openSettings: 'Otvori podešavanja',
       transcribe: 'Transkribuj',
       transcribeAgain: 'Transkribuj ponovo',
+      importSrt: 'Uvezi SRT',
+      importSrtAgain: 'Uvezi SRT ponovo',
       translate: 'Prevedi',
       translateCount: 'Prevedi redove: {{count}}',
       translateAgain: 'Prevedi ponovo',
@@ -299,7 +303,7 @@ export const captionsStrings = {
         notConnected: 'Prvo poveži {{provider}} u podešavanjima',
         cannotTranscribe: '{{provider}} ne može da transkribuje zvuk',
         cannotTranslate: '{{provider}} ne može da prevodi',
-        noCaptions: 'Prvo transkribuj isečak',
+        noCaptions: 'Prvo uvezi SRT fajl ili transkribuj isečak',
         allTranslated: 'Svi redovi su prevedeni i ažurni',
         busy: 'Sačekaj da se završi trenutni posao'
       }
@@ -466,6 +470,8 @@ export const captionsStrings = {
       openSettings: 'Отвори подешавања',
       transcribe: 'Транскрибуј',
       transcribeAgain: 'Транскрибуј поново',
+      importSrt: 'Увези SRT',
+      importSrtAgain: 'Увези SRT поново',
       translate: 'Преведи',
       translateCount: 'Преведи редове: {{count}}',
       translateAgain: 'Преведи поново',
@@ -478,7 +484,7 @@ export const captionsStrings = {
         notConnected: 'Прво повежи {{provider}} у подешавањима',
         cannotTranscribe: '{{provider}} не може да транскрибује звук',
         cannotTranslate: '{{provider}} не може да преводи',
-        noCaptions: 'Прво транскрибуј исечак',
+        noCaptions: 'Прво увези SRT фајл или транскрибуј исечак',
         allTranslated: 'Сви редови су преведени и ажурни',
         busy: 'Сачекај да се заврши тренутни посао'
       }

@@ -220,6 +220,7 @@ export function EditorPage({
             }
             onTargetLanguageChange={(code) => dispatch({ type: 'languages/set', targetLanguage: code })}
             onTranscribe={workspace.requestTranscribe}
+            onImportSrt={workspace.importSrt}
             onTranslate={workspace.translate}
             onOpenSettings={onOpenSettings}
           />

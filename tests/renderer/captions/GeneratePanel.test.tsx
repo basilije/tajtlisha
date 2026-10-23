@@ -27,6 +27,7 @@ function props(overrides: Partial<GeneratePanelProps> = {}): GeneratePanelProps 
     onSourceLanguageChange: vi.fn(),
     onTargetLanguageChange: vi.fn(),
     onTranscribe: vi.fn(),
+    onImportSrt: vi.fn(),
     onTranslate: vi.fn(),
     onOpenSettings: vi.fn(),
     ...overrides
@@ -53,7 +54,7 @@ describe('GeneratePanel', () => {
     renderWithI18n(<GeneratePanel {...props({ hasSource: false, hasAudio: false })} />);
 
     expect(screen.getByRole('button', { name: 'Transcribe' })).toBeDisabled();
-    expect(screen.getByText('Open a video first')).toBeTruthy();
+    expect(screen.getAllByText('Open a video first').length).toBeGreaterThan(0);
   });
 
   it('explains when the video has no audio track', () => {
@@ -112,11 +113,26 @@ describe('GeneratePanel', () => {
     expect(screen.getByText('3 captions')).toBeTruthy();
   });
 
+  it('imports an SRT when a video is open', () => {
+    const onImportSrt = vi.fn();
+    renderWithI18n(<GeneratePanel {...props({ onImportSrt })} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import SRT' }));
+    expect(onImportSrt).toHaveBeenCalledOnce();
+  });
+
+  it('explains that an SRT cannot be imported before a video is open', () => {
+    renderWithI18n(<GeneratePanel {...props({ hasSource: false })} />);
+
+    expect(screen.getByRole('button', { name: 'Import SRT' })).toBeDisabled();
+    expect(screen.getAllByText('Open a video first').length).toBeGreaterThan(0);
+  });
+
   it('asks to transcribe first when translating without captions', () => {
     renderWithI18n(<GeneratePanel {...props({ captionCount: 0 })} />);
 
     expect(screen.getByRole('button', { name: 'Translate' })).toBeDisabled();
-    expect(screen.getByText('Transcribe the clip first')).toBeTruthy();
+    expect(screen.getByText('Import an SRT file or transcribe the clip first')).toBeTruthy();
   });
 
   it('shows the number of rows that need translation', () => {
@@ -142,7 +158,7 @@ describe('GeneratePanel', () => {
 
     expect(screen.getByRole('button', { name: 'Transcribe again' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Translate 2 rows' })).toBeDisabled();
-    expect(screen.getAllByText('Wait for the current job to finish')).toHaveLength(2);
+    expect(screen.getAllByText('Wait for the current job to finish')).toHaveLength(3);
   });
 
   it('warns that timing is approximate for speech detection', () => {
