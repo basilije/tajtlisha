@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { AppError } from '../../shared/errors';
 import { validatePath } from '../media/contracts';
 import {
@@ -23,6 +23,18 @@ import {
   type ProviderVideoTranslateRequest,
   type ProviderVideoTranslateResult
 } from './provider';
+
+/** Counts bytes as a file stream is read, so a large upload can report how far it has gone. */
+export function byteCounter(onBytes?: (loaded: number) => void): Transform {
+  let loaded = 0;
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      loaded += chunk.length;
+      onBytes?.(loaded);
+      callback(null, chunk);
+    }
+  });
+}
 
 export const opusProviderDefinition: ProviderDefinition = {
   id: 'opus',
@@ -99,9 +111,12 @@ export class OpusProvider extends BaseAiProvider {
       const upload = await this.createUpload(request.signal);
       request.onProgress?.(0.08);
       const sessionUrl = await this.startResumable(upload.url, contentType, request.signal);
-      request.onProgress?.(0.12);
-      await this.putFile(sessionUrl, request.inputPath, file.size, contentType, request.signal);
-      request.onProgress?.(0.4);
+      request.onUpload?.(0, file.size);
+      await this.putFile(sessionUrl, request.inputPath, file.size, contentType, request.signal, (loaded) =>
+        request.onUpload?.(loaded, file.size)
+      );
+      request.onUpload?.(file.size, file.size);
+      request.onProgress?.(0.45);
       const title = `${basename(request.inputPath, extname(request.inputPath))} [${targetLanguage}]`.slice(0, 180);
       const created = await this.postJson(
         '/clip-projects',
@@ -183,7 +198,8 @@ export class OpusProvider extends BaseAiProvider {
     inputPath: string,
     size: number,
     contentType: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onBytes?: (loaded: number) => void
   ): Promise<void> {
     let response: Response;
     try {
@@ -193,7 +209,7 @@ export class OpusProvider extends BaseAiProvider {
           'Content-Type': contentType,
           'Content-Length': String(size)
         },
-        body: Readable.toWeb(createReadStream(inputPath)) as BodyInit,
+        body: Readable.toWeb(createReadStream(inputPath).pipe(byteCounter(onBytes))) as BodyInit,
         duplex: 'half',
         signal
       } as RequestInit);

@@ -18,6 +18,7 @@ export type JobStage =
   | 'detecting_speech'
   | 'transcribing'
   | 'translating'
+  | 'uploading_video'
   | 'polishing'
   | 'rendering_video'
   | 'writing_srt';
@@ -27,6 +28,10 @@ export type JobProgressEvent = {
   stage: JobStage;
   /** 0..1 when known; undefined for indeterminate stages. */
   progress?: number;
+  /** Bytes sent so far when the stage is an upload. */
+  loadedBytes?: number;
+  /** Total bytes of the file being uploaded. */
+  totalBytes?: number;
 };
 
 /** How the caption timing was obtained. */

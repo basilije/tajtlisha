@@ -75,6 +75,7 @@ export const captionsStrings = {
       detecting_speech: 'Detecting speech',
       transcribing: 'Transcribing',
       translating: 'Translating',
+      uploading_video: 'Sending video',
       polishing: 'Polishing text',
       rendering_video: 'Rendering video',
       writing_srt: 'Writing SRT'
@@ -89,6 +90,7 @@ export const captionsStrings = {
       working: 'Working…',
       elapsed: 'Elapsed {{time}}',
       progress: 'Progress {{percent}}%',
+      upload: '{{sent}} / {{total}} MB',
       cancel: 'Cancel',
       dismiss: 'Dismiss'
     },
@@ -256,6 +258,7 @@ export const captionsStrings = {
       detecting_speech: 'Prepoznavanje govora',
       transcribing: 'Transkripcija',
       translating: 'Prevođenje',
+      uploading_video: 'Slanje videa',
       polishing: 'Dorada teksta',
       rendering_video: 'Renderovanje videa',
       writing_srt: 'Pisanje SRT-a'
@@ -270,6 +273,7 @@ export const captionsStrings = {
       working: 'U toku…',
       elapsed: 'Prošlo {{time}}',
       progress: 'Napredak {{percent}}%',
+      upload: '{{sent}} / {{total}} MB',
       cancel: 'Otkaži',
       dismiss: 'Zatvori'
     },
@@ -437,6 +441,7 @@ export const captionsStrings = {
       detecting_speech: 'Препознавање говора',
       transcribing: 'Транскрипција',
       translating: 'Превођење',
+      uploading_video: 'Слање видеа',
       polishing: 'Дорада текста',
       rendering_video: 'Рендеровање видеа',
       writing_srt: 'Писање SRT-а'
@@ -451,6 +456,7 @@ export const captionsStrings = {
       working: 'У току…',
       elapsed: 'Прошло {{time}}',
       progress: 'Напредак {{percent}}%',
+      upload: '{{sent}} / {{total}} МБ',
       cancel: 'Откажи',
       dismiss: 'Затвори'
     },

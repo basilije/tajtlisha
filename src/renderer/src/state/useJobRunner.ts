@@ -12,6 +12,8 @@ export type ActiveJob = {
   stage?: JobStage;
   /** 0..1 when the backend reports it. */
   progress?: number;
+  loadedBytes?: number;
+  totalBytes?: number;
   startedAt: number;
 };
 
@@ -43,7 +45,15 @@ export function useJobRunner(api: TajtlishaApi | undefined = getWindowApi()): Jo
     if (!api) return;
     return api.jobs.onProgress((event: JobProgressEvent) => {
       setJob((current) =>
-        current && current.id === event.jobId ? { ...current, stage: event.stage, progress: event.progress } : current
+        current && current.id === event.jobId
+          ? {
+              ...current,
+              stage: event.stage,
+              progress: event.progress,
+              loadedBytes: event.loadedBytes,
+              totalBytes: event.totalBytes
+            }
+          : current
       );
     });
   }, [api]);

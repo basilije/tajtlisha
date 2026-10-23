@@ -76,6 +76,8 @@ export type ProviderVideoTranslateRequest = {
   cues: ProviderVideoCue[];
   signal?: AbortSignal;
   onProgress?: (progress: number) => void;
+  /** Called while the open video is being sent. `loadedBytes` climbs up to `totalBytes`. */
+  onUpload?: (loadedBytes: number, totalBytes: number) => void;
 };
 
 export type ProviderCreditReport = {

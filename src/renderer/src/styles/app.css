@@ -374,11 +374,9 @@
   min-width: 0;
   width: 100%;
 }
-@media (max-width: 1279px) {
-  /* The AI actions get their own row so they never sit on top of the provider badge. */
-  .editor-generate .generate-actions {
-    flex: 1 1 100%;
-  }
+/* The left column is narrower than the window. Keep Import and Translate on their own row so they are not clipped. */
+.editor-generate .generate-actions {
+  flex: 1 1 100%;
 }
 
 /* Splitters. The hit area is the full 12 px track; the visible line is 1 px in the middle. */

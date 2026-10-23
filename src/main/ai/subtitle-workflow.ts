@@ -28,6 +28,8 @@ export type WorkflowProgress = {
   stage: JobStage;
   /** 0..1 when known. */
   progress?: number;
+  loadedBytes?: number;
+  totalBytes?: number;
 };
 
 export type WorkflowContext = {
@@ -183,6 +185,13 @@ export class SubtitleWorkflowService {
       targetLanguage: request.targetLanguage,
       cues,
       signal: context.signal,
+      onUpload: (loadedBytes, totalBytes) =>
+        context.onProgress?.({
+          stage: 'uploading_video',
+          progress: totalBytes > 0 ? loadedBytes / totalBytes : 0,
+          loadedBytes,
+          totalBytes
+        }),
       onProgress: (progress) => context.onProgress?.({ stage: 'translating', progress })
     });
 

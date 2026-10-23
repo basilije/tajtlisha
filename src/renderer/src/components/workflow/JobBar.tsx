@@ -13,8 +13,15 @@ export type JobBarJob = {
   stage?: JobStage;
   /** 0..1 when known; undefined renders an indeterminate bar. */
   progress?: number;
+  loadedBytes?: number;
+  totalBytes?: number;
   startedAt: number;
 };
+
+/** One decimal megabyte, so a multi-hundred-megabyte upload is readable at a glance. */
+export function formatMegabytes(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(1);
+}
 
 export type JobBarResult = {
   kind: 'transcribe' | 'translate' | 'export' | 'preview';
@@ -67,9 +74,14 @@ export function JobBar({ job, result, onCancel, onDismiss }: JobBarProps): React
   if (job) {
     const hasProgress = job.progress !== undefined;
     const percent = Math.round(Math.min(1, Math.max(0, job.progress ?? 0)) * 100);
-    const stageLabel = job.stage
-      ? t(`captions.stages.${job.stage}`)
-      : t(`captions.jobs.${job.kind}`);
+    const stageName = job.stage ? t(`captions.stages.${job.stage}`) : t(`captions.jobs.${job.kind}`);
+    const stageLabel =
+      job.stage === 'uploading_video' && job.totalBytes
+        ? `${stageName} · ${t('captions.job.upload', {
+            sent: formatMegabytes(job.loadedBytes ?? 0),
+            total: formatMegabytes(job.totalBytes)
+          })}`
+        : stageName;
 
     return (
       <div className="job-bar" role="status" aria-live="polite">

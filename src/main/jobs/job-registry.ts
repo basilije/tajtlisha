@@ -17,6 +17,8 @@ export type JobOwner = {
 export type JobProgressReport = {
   stage: JobStage;
   progress?: number;
+  loadedBytes?: number;
+  totalBytes?: number;
 };
 
 export type JobContext = {
@@ -26,7 +28,7 @@ export type JobContext = {
 
 export type ActiveJob = {
   signal: AbortSignal;
-  report(stage: JobStage, progress?: number): void;
+  report(stage: JobStage, progress?: number, detail?: Pick<JobProgressReport, 'loadedBytes' | 'totalBytes'>): void;
   /** Idempotent. Releases the job id and lets pending cancel() calls resolve. */
   finish(): void;
 };
@@ -76,8 +78,8 @@ export class JobRegistry {
     let done = false;
     return {
       signal: entry.controller.signal,
-      report: (stage, progress) => {
-        if (!done) this.send(jobId, entry, stage, progress);
+      report: (stage, progress, detail) => {
+        if (!done) this.send(jobId, entry, stage, progress, detail);
       },
       finish: () => {
         if (done) return;
@@ -133,10 +135,16 @@ export class JobRegistry {
     return this.jobsByOwner.size > 0;
   }
 
-  private send(jobId: string, entry: JobEntry, stage: JobStage, progress: number | undefined): void {
+  private send(
+    jobId: string,
+    entry: JobEntry,
+    stage: JobStage,
+    progress: number | undefined,
+    detail?: Pick<JobProgressReport, 'loadedBytes' | 'totalBytes'>
+  ): void {
     const now = this.now();
     const sameStage = stage === entry.lastStage;
-    const payload: JobProgressEvent = { jobId, stage, progress };
+    const payload: JobProgressEvent = { jobId, stage, progress, ...detail };
     if (sameStage && now - entry.lastSentAt < PROGRESS_THROTTLE_MS) {
       // Keep the newest value and deliver it when the window ends, so the last
       // update of a stage (e.g. 97% -> 100%) is never lost.
@@ -182,7 +190,7 @@ export async function runJob<T>(
   try {
     return await fn({
       signal: job.signal,
-      onProgress: ({ stage, progress }) => job.report(stage, progress)
+      onProgress: ({ stage, progress, loadedBytes, totalBytes }) => job.report(stage, progress, { loadedBytes, totalBytes })
     });
   } catch (error) {
     if (job.signal.aborted && !(error instanceof AppError && error.code === 'JOB_CANCELED')) {

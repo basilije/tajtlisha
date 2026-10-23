@@ -35,6 +35,20 @@ describe('JobBar', () => {
     expect(track.className).not.toContain('is-indeterminate');
   });
 
+  it('names a video upload and how many megabytes have been sent', () => {
+    bar({
+      kind: 'translate',
+      stage: 'uploading_video',
+      progress: 0.18,
+      loadedBytes: 48 * 1024 * 1024,
+      totalBytes: 271 * 1024 * 1024,
+      startedAt: Date.now()
+    });
+
+    expect(screen.getByText('Sending video · 48.0 / 271.0 MB')).toBeTruthy();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('18');
+  });
+
   it('renders an indeterminate bar when progress is unknown', () => {
     bar({ kind: 'translate', stage: 'translating', startedAt: Date.now() });
 
